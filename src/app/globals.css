@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Inter', var(--font-sans);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-bg text-slate-200 antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 80% -10%, rgba(38, 208, 206, 0.06), transparent),
+      radial-gradient(1000px 500px at 0% 0%, rgba(139, 92, 246, 0.05), transparent);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  ::selection {
+    background: rgba(38, 208, 206, 0.3);
+  }
+  * {
+    border-color: theme('colors.border.DEFAULT');
+  }
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0b10;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2c3042;
+    border-radius: 8px;
+    border: 2px solid #0a0b10;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3f55;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-border bg-bg-card/80 backdrop-blur-sm;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:border-border-soft hover:bg-bg-elevated/80;
+  }
+  .stat-grid {
+    @apply grid gap-px overflow-hidden rounded-xl border border-border bg-border;
+  }
+  .neon-text {
+    text-shadow: 0 0 18px rgba(38, 208, 206, 0.45);
+  }
+  .input-base {
+    @apply w-full rounded-lg border border-border bg-bg-soft px-3 py-2 text-sm text-slate-100
+      placeholder:text-slate-500 outline-none transition-colors
+      focus:border-rift-cyan/60 focus:ring-1 focus:ring-rift-cyan/30;
+  }
+}
+
+/* Bracket connector lines */
+.bracket-col {
+  position: relative;
+}
