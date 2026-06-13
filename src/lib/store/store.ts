@@ -16,8 +16,9 @@ import type {
   TradeStatus,
 } from '@/lib/types';
 import { EMPTY_DB } from '@/lib/types';
-import { BROADCAST_CHANNEL, DEMO_USER_ID, STORAGE_KEY } from '@/lib/constants';
+import { DEMO_USER_ID } from '@/lib/constants';
 import { nowISO, uid } from '@/lib/utils';
+import { createDataAdapter, type DataAdapter, type DataEvent } from '@/lib/data';
 import { buildLeagueEntities, buildSeedDatabase } from '@/data/seed';
 import type { RawLeague } from '@/data/rosters';
 import { computeTeamStrength } from '@/services/strength';
@@ -52,11 +53,15 @@ interface StoreState {
   db: Database;
   rev: number;
   ready: boolean;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
   mode: 'mock' | 'supabase';
   currentUserId: string;
   toasts: Toast[];
 
   init: () => void;
+  refresh: () => void;
   reseed: () => void;
   hardReset: () => void;
 
@@ -135,46 +140,65 @@ interface StoreState {
 }
 
 // ---------------------------------------------------------------------------
-// persistence + broadcast (browser-only)
+// Adapter lifecycle
 // ---------------------------------------------------------------------------
-const ORIGIN = Math.random().toString(36).slice(2);
-let channel: BroadcastChannel | null = null;
-
-function persist(db: Database) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  } catch (e) {
-    // quota — non-fatal for the demo
-    console.warn('persist failed', e);
-  }
-}
-
-function loadDb(): Database | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Database;
-    // light shape check
-    if (!parsed || !Array.isArray(parsed.leagues)) return null;
-    return { ...EMPTY_DB, ...parsed };
-  } catch {
-    return null;
-  }
-}
+let adapter: DataAdapter | null = null;
+let unsubscribeAdapter: (() => void) | null = null;
+let writeQueue: Promise<void> = Promise.resolve();
+let pendingWrites = 0;
+let syncEpoch = 0;
 
 export const useStore = create<StoreState>((set, get) => {
-  function broadcast(db: Database, toast?: Toast) {
-    if (!channel) return;
-    try {
-      channel.postMessage({ origin: ORIGIN, db, toast });
-    } catch (e) {
-      console.warn('broadcast failed', e);
-    }
+  function addToast(event: DataEvent): void {
+    const toast: Toast = { id: uid('toast'), ts: Date.now(), ...event };
+    set({ toasts: [...get().toasts, toast].slice(-6) });
+  }
+
+  function reportError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    set({ error: message });
+    addToast({ kind: 'error', message });
+  }
+
+  function loadFromAdapter(): void {
+    if (!adapter || get().loading) return;
+    set({ loading: true, error: null });
+    void adapter
+      .loadDatabase()
+      .then(({ db, currentUserId }) => {
+        set({ db, currentUserId, ready: true, loading: false, rev: get().rev + 1 });
+      })
+      .catch((error) => {
+        set({ db: structuredClone(EMPTY_DB), ready: true, loading: false });
+        reportError(error);
+      });
+  }
+
+  function persistChange(previous: Database, next: Database, event?: DataEvent): void {
+    if (!adapter) return;
+    const epoch = syncEpoch;
+    pendingWrites++;
+    set({ saving: true, error: null });
+    writeQueue = writeQueue
+      .catch(() => undefined)
+      .then(() => (epoch === syncEpoch ? adapter!.saveDatabase(previous, next, event) : undefined))
+      .catch(async (error) => {
+        syncEpoch++;
+        reportError(error);
+        if (adapter?.mode === 'supabase') {
+          const snapshot = await adapter.loadDatabase();
+          set({ db: snapshot.db, currentUserId: snapshot.currentUserId, rev: get().rev + 1 });
+        }
+      })
+      .catch(reportError)
+      .finally(() => {
+        pendingWrites--;
+        set({ saving: pendingWrites > 0 });
+      });
   }
 
   function commit(mutate: () => void, opts: CommitOpts = {}) {
+    const previous = structuredClone(get().db);
     mutate();
     const db = get().db;
     // audit log
@@ -197,9 +221,9 @@ export const useStore = create<StoreState>((set, get) => {
       const toasts = [...get().toasts, toast].slice(-6);
       set({ toasts });
     }
-    set({ rev: get().rev + 1 });
-    persist(db);
-    if (opts.broadcast !== false) broadcast(db, toast);
+    const next = structuredClone(db);
+    set({ db: next, rev: get().rev + 1 });
+    persistChange(previous, next, opts.broadcast === false ? undefined : opts.toast);
   }
 
   // helpers operating on the live db -----------------------------------------
@@ -282,47 +306,48 @@ export const useStore = create<StoreState>((set, get) => {
     db: EMPTY_DB,
     rev: 0,
     ready: false,
+    loading: false,
+    saving: false,
+    error: null,
     mode: 'mock',
     currentUserId: DEMO_USER_ID,
     toasts: [],
 
     init() {
-      if (get().ready) return;
-      const hasSupabase =
-        !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
-        !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-        process.env.NEXT_PUBLIC_FORCE_MOCK !== 'true';
+      if (adapter || get().loading || get().ready) return;
+      adapter = createDataAdapter();
+      set({ mode: adapter.mode });
+      unsubscribeAdapter?.();
+      unsubscribeAdapter = adapter.subscribe(
+        ({ db, currentUserId }, event) => {
+          set({ db, currentUserId, error: null, rev: get().rev + 1 });
+          if (event) addToast(event);
+        },
+        reportError,
+      );
+      loadFromAdapter();
+    },
 
-      const existing = loadDb();
-      const db = existing ?? buildSeedDatabase();
-      if (!existing) persist(db);
-
-      // cross-tab realtime
-      if (typeof window !== 'undefined' && 'BroadcastChannel' in window && !channel) {
-        channel = new BroadcastChannel(BROADCAST_CHANNEL);
-        channel.onmessage = (ev: MessageEvent) => {
-          const data = ev.data as { origin: string; db: Database; toast?: Toast };
-          if (!data || data.origin === ORIGIN) return;
-          const next: Partial<StoreState> = { db: data.db, rev: get().rev + 1 };
-          if (data.toast) next.toasts = [...get().toasts, data.toast].slice(-6);
-          set(next);
-        };
-      }
-
-      set({ db, ready: true, mode: hasSupabase ? 'supabase' : 'mock', rev: get().rev + 1 });
+    refresh() {
+      loadFromAdapter();
     },
 
     reseed() {
+      if (adapter?.mode === 'supabase') {
+        reportError(new Error('Demo reseeding is only available in mock mode.'));
+        return;
+      }
       const db = buildSeedDatabase();
       commit(() => set({ db }), { toast: { kind: 'success', message: 'Demo data reloaded' } });
     },
 
     hardReset() {
-      if (typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
+      if (adapter?.mode === 'supabase') {
+        reportError(new Error('Local data reset is only available in mock mode.'));
+        return;
+      }
       const db = buildSeedDatabase();
-      set({ db, rev: get().rev + 1 });
-      persist(db);
-      broadcast(db);
+      commit(() => set({ db }), { toast: { kind: 'success', message: 'Local data reset' } });
     },
 
     pushToast(t) {

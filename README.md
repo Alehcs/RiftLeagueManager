@@ -55,7 +55,7 @@ npm run typecheck  # tsc --noEmit
 
 ## ✅ Current Status
 
-**Implemented & working (mock mode — the default):**
+**Implemented in mock and Supabase modes:**
 
 - League create / import / clone wizard; 8 seeded real leagues (LCK, LPL, LEC, LCS, CBLOL, a Tier 2 academy league, Worlds, MSI).
 - Schedule & bracket generation; match / week / regular-season / playoff simulation.
@@ -63,13 +63,12 @@ npm run typecheck  # tsc --noEmit
 - Transfer market: sign / release / sell, multi-player + cash trades with budget validation, transfer history.
 - Admin panel: full CRUD, league settings, asset manager, audit logs, import/export.
 - JSON league bundles + Teams/Players/Coaches/Matches CSV import & export.
-- Realtime updates across browser tabs (BroadcastChannel) with toast notifications.
+- Adapter-backed CRUD for leagues, teams, players, coaches, matches, games, trades, transfer history, imports and audit logs.
+- Mock realtime across browser tabs with `BroadcastChannel`; Supabase Realtime for matches, standings, rosters, trades and audit logs.
+- Auth-aware owner/admin checks in both the client adapter and Postgres RLS policies.
 
-**Still mock / localStorage-based (not yet server-backed):**
+**Known data limitations:**
 
-- All data lives in the in-app store, persisted to the browser's `localStorage`. There is **no shared backend** in the default setup — each browser keeps its own copy.
-- "Realtime" is **cross-tab only** (same browser), via `BroadcastChannel` — not multi-user over a network.
-- **Supabase is scaffolding only.** The SQL schema/RLS migration and client helpers are included and the store mirrors the schema 1:1, but entity reads/writes still go through the local store. Supabase env vars currently only switch a status badge.
 - Import adapters resolve from the **bundled dataset**; live wiki/official fetching is stubbed (`fetchLive`) with a graceful fallback.
 - Player ratings, values and contracts are **generated**, not real — and editable in-app.
 
@@ -110,7 +109,8 @@ src/
 │   ├── types.ts              # Domain types — mirror the Postgres schema 1:1
 │   ├── constants.ts          # Roles, tiers, regions, formats
 │   ├── rng.ts                # Deterministic PRNG (stable generated ratings)
-│   ├── store/                # Zustand store (actions, persistence, realtime), selectors, hooks
+│   ├── data/                 # Mock and Supabase repository adapters
+│   ├── store/                # Zustand domain actions, optimistic state, selectors, hooks
 │   └── supabase/             # Optional Supabase clients (browser/server)
 ├── services/                 # Framework-agnostic engine — no React, no UI
 │   ├── ratings.ts            # Rating / value / salary / budget generation
@@ -130,8 +130,8 @@ src/
 
 ### Data layer (mock vs Supabase)
 
-- **Mock mode (default):** the Zustand store holds the entire database (shape = `Database` in `lib/types.ts`), persists it to `localStorage`, and broadcasts changes over the `BroadcastChannel` API so multiple tabs stay in sync in realtime. Toasts surface live events.
-- **Supabase mode:** if `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set (and `NEXT_PUBLIC_FORCE_MOCK` ≠ `true`), the app reports Supabase mode. The full schema, RLS policies and realtime publication live in `supabase/migrations/0001_init.sql`, and browser/server clients are in `src/lib/supabase/`. Apply the migration with the Supabase CLI (`supabase db push`) or the SQL editor.
+- **Mock mode (default):** `mockAdapter` loads and saves the full `Database` shape in `localStorage` and uses `BroadcastChannel` for cross-tab updates.
+- **Supabase mode:** `supabaseAdapter` loads Postgres rows, applies diff-based CRUD mutations, creates an anonymous session when enabled, and refreshes state from Supabase Realtime. Set `NEXT_PUBLIC_FORCE_MOCK=true` to keep local mode even when Supabase variables exist.
 
 > The mock store and the Postgres schema share the exact same shape, so moving from one to the other is a mechanical swap rather than a rewrite.
 
@@ -179,16 +179,17 @@ stage,week,match_day,date_time,blue_team_short_name,red_team_short_name,format,s
 ## 🔌 Optional: connecting Supabase
 
 1. Create a Supabase project.
-2. Run `supabase/migrations/0001_init.sql` (CLI `supabase db push`, or paste into the SQL editor).
-3. Copy `.env.example` → `.env.local` and fill in:
+2. Enable **Anonymous Sign-Ins** under Authentication → Providers. Existing authenticated sessions also work.
+3. Run `supabase/migrations/0001_init.sql` with `supabase db push` or the SQL editor.
+4. Copy `.env.example` → `.env.local` and fill in:
    ```
    NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    SUPABASE_SERVICE_ROLE_KEY=...        # server-only
    ```
-4. Restart `npm run dev`. The navbar badge switches from **MOCK MODE** to **SUPABASE**.
+5. Restart `npm run dev`. The navbar badge switches from **MOCK MODE** to **SUPABASE**.
 
-The included RLS policies are demo-friendly (public read, authenticated write) — tighten them against `league_admins` for production.
+Reads are public. Writes require an authenticated user who owns the league or has an `owner`/`admin` row in `league_admins`. New anonymous users can create leagues but cannot edit leagues owned by other users.
 
 ---
 
@@ -207,7 +208,6 @@ The included RLS policies are demo-friendly (public read, authenticated write) �
 
 ## 🧭 Next Steps
 
-- **Connect real Supabase data operations** — implement a repository behind the store so reads/writes hit Postgres, wire Supabase Realtime + Auth, and enforce RLS against `league_admins`.
 - **Improve real-data importers** — implement `fetchLive()` against Leaguepedia / Liquipedia / LoL Esports to pull live rosters, logos, schedules and results.
 - **Expand regional rosters** — add VCS, LJL, LLA, PCS, TCL, LCP and ERLs (LFL, Prime League, SuperLiga, NLC, Ultraliga, EMEA Masters) with current rosters.
 - **Improve the simulation / rating system** — richer per-game model (draft, side advantage, momentum), data-informed ratings and calibration.
@@ -219,6 +219,8 @@ The included RLS policies are demo-friendly (public read, authenticated write) �
 ## 📝 Notes & limitations
 
 - Mock data lives in your browser. **Profile → Wipe & reseed** resets it; **Reset demo** on the dashboard reloads the seeded leagues.
+- Supabase multi-entity operations are serialized but are not yet wrapped in a single Postgres transaction.
+- Authentication uses an existing session or anonymous sign-in; there is no account login UI yet.
 - Double elimination is generated for 4- and 8-team fields (used by MSI); other sizes fall back to single elimination.
 - Swiss pairing is a simplified records-based implementation.
 - Team logos / player images default to generated initials tiles; paste real public image URLs in **Admin → Assets** (or per entity) to replace them.

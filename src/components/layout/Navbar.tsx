@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { LayoutDashboard, Trophy, DownloadCloud, User, Menu, X, Swords, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useMode } from '@/lib/store/hooks';
+import { useDataStatus, useMode } from '@/lib/store/hooks';
 
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -18,6 +18,7 @@ const LINKS = [
 export function Navbar() {
   const pathname = usePathname();
   const mode = useMode();
+  const { saving } = useDataStatus();
   const [open, setOpen] = useState(false);
 
   return (
@@ -57,9 +58,9 @@ export function Navbar() {
               'hidden rounded-md px-2 py-1 text-[10px] font-semibold sm:inline',
               mode === 'mock' ? 'bg-rift-gold/15 text-rift-gold' : 'bg-rift-green/15 text-rift-green',
             )}
-            title={mode === 'mock' ? 'Local mock mode — data persists in your browser & syncs across tabs' : 'Connected to Supabase'}
+            title={mode === 'mock' ? 'Local mock mode — data persists in your browser & syncs across tabs' : saving ? 'Saving to Supabase' : 'Connected to Supabase'}
           >
-            {mode === 'mock' ? 'MOCK MODE' : 'SUPABASE'}
+            {mode === 'mock' ? 'MOCK MODE' : saving ? 'SYNCING' : 'SUPABASE'}
           </span>
           <button className="md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Menu">
             {open ? <X size={20} /> : <Menu size={20} />}

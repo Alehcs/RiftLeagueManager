@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useReady } from '@/lib/store/hooks';
+import { useDataStatus, useReady } from '@/lib/store/hooks';
+import { useStore } from '@/lib/store/store';
 import { Spinner } from '@/components/ui/primitives';
 
 export function PageContainer({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -10,6 +11,8 @@ export function PageContainer({ children, className }: { children: React.ReactNo
 
 export function LoadingGate({ children }: { children: React.ReactNode }) {
   const ready = useReady();
+  const { error } = useDataStatus();
+  const refresh = useStore((state) => state.refresh);
   if (!ready) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-slate-500">
@@ -18,7 +21,17 @@ export function LoadingGate({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  return <>{children}</>;
+  return (
+    <>
+      {error && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rift-red/30 bg-rift-red/10 px-4 py-3 text-sm text-red-200">
+          <span>{error}</span>
+          <button className="shrink-0 font-semibold text-white hover:underline" onClick={refresh}>Retry</button>
+        </div>
+      )}
+      {children}
+    </>
+  );
 }
 
 export function PageHeader({

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { DownloadCloud, Wand2, Trophy, Users, Swords, RefreshCw } from 'lucide-react';
-import { useDb } from '@/lib/store/hooks';
+import { useDb, useMode } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { LeagueCard } from '@/components/league/LeagueCard';
 import { PageContainer, LoadingGate, PageHeader } from '@/components/common/layout';
@@ -15,6 +15,7 @@ const TIER_ORDER: LeagueTier[] = ['tier1', 'international', 'regional', 'erl', '
 
 export default function DashboardPage() {
   const db = useDb();
+  const mode = useMode();
   const reseed = useStore((s) => s.reseed);
 
   const byTier = TIER_ORDER.map((tier) => ({
@@ -39,9 +40,11 @@ export default function DashboardPage() {
                 <Wand2 size={16} /> New league
               </Button>
             </Link>
-            <ConfirmButton variant="ghost" confirmLabel="Reload demo?" onConfirm={reseed}>
-              <RefreshCw size={15} /> Reset demo
-            </ConfirmButton>
+            {mode === 'mock' && (
+              <ConfirmButton variant="ghost" confirmLabel="Reload demo?" onConfirm={reseed}>
+                <RefreshCw size={15} /> Reset demo
+              </ConfirmButton>
+            )}
           </>
         }
       />

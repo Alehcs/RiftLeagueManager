@@ -26,7 +26,7 @@ export default function ProfilePage() {
 
   return (
     <PageContainer className="max-w-3xl">
-      <PageHeader title="Profile" subtitle="Your account & local data" icon={<User className="text-rift-cyan" />} />
+      <PageHeader title="Profile" subtitle="Your account & data" icon={<User className="text-rift-cyan" />} />
       <LoadingGate>
         <div className="space-y-6">
           <Card>
@@ -70,14 +70,16 @@ export default function ProfilePage() {
                   <span>Connected to <b className="text-rift-green">Supabase</b>.</span>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <ConfirmButton variant="outline" confirmLabel="Reload demo data?" onConfirm={reseed}>
-                  <RefreshCw size={15} /> Reload demo leagues
-                </ConfirmButton>
-                <ConfirmButton variant="danger" confirmLabel="Erase ALL local data?" onConfirm={hardReset}>
-                  <Trash2 size={15} /> Wipe & reseed
-                </ConfirmButton>
-              </div>
+              {mode === 'mock' && (
+                <div className="flex flex-wrap gap-2">
+                  <ConfirmButton variant="outline" confirmLabel="Reload demo data?" onConfirm={reseed}>
+                    <RefreshCw size={15} /> Reload demo leagues
+                  </ConfirmButton>
+                  <ConfirmButton variant="danger" confirmLabel="Erase ALL local data?" onConfirm={hardReset}>
+                    <Trash2 size={15} /> Wipe & reseed
+                  </ConfirmButton>
+                </div>
+              )}
             </CardBody>
           </Card>
         </div>

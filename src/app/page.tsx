@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowRight, DownloadCloud, Trophy, Swords, Users, Wand2, Activity, Sparkles } from 'lucide-react';
-import { useDb, useReady } from '@/lib/store/hooks';
+import { useDataStatus, useDb, useReady } from '@/lib/store/hooks';
 import { FEATURED_SLUGS } from '@/data/rosters';
 import { LeagueCard } from '@/components/league/LeagueCard';
 import { PageContainer } from '@/components/common/layout';
@@ -10,6 +10,7 @@ import { Button, Card, Spinner } from '@/components/ui/primitives';
 
 export default function LandingPage() {
   const ready = useReady();
+  const { error } = useDataStatus();
   const db = useDb();
   const featured = FEATURED_SLUGS.map((s) => db.leagues.find((l) => l.slug === s)).filter(Boolean);
   const otherLeagues = db.leagues.filter((l) => !FEATURED_SLUGS.includes(l.slug));
@@ -71,6 +72,9 @@ export default function LandingPage() {
           </Link>
         </div>
 
+        {error && (
+          <div className="mb-4 rounded-lg border border-rift-red/30 bg-rift-red/10 px-4 py-3 text-sm text-red-200">{error}</div>
+        )}
         {!ready ? (
           <div className="flex h-48 items-center justify-center">
             <Spinner className="h-7 w-7" />

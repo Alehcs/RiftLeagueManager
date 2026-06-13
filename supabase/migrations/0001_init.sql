@@ -247,16 +247,46 @@ create table if not exists audit_logs (
 
 -- Realtime: add the live tables to the supabase_realtime publication.
 do $$
+declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    execute 'alter publication supabase_realtime add table leagues, teams, players, coaches, matches, games, trades, trade_items, transfer_history, import_jobs';
+    foreach t in array array[
+      'matches','games','teams','players','coaches','trades','trade_items',
+      'transfer_history','audit_logs'
+    ] loop
+      if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+      ) then
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      end if;
+    end loop;
   end if;
 exception when others then null;
 end $$;
 
 -- Row Level Security ---------------------------------------------------------
--- Demo-friendly policies: public read everywhere; writes require an authenticated
--- user. Tighten these (e.g. owner/admin checks against league_admins) for prod.
+create or replace function public.has_league_role(target_league_id uuid, allowed_roles text[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.leagues
+    where id = target_league_id and owner_user_id = auth.uid()
+  ) or exists (
+    select 1 from public.league_admins
+    where league_id = target_league_id
+      and user_id = auth.uid()
+      and role = any(allowed_roles)
+  );
+$$;
+
+revoke all on function public.has_league_role(uuid, text[]) from public;
+grant execute on function public.has_league_role(uuid, text[]) to anon, authenticated;
+
 do $$
 declare t text;
 begin
@@ -266,8 +296,113 @@ begin
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists "public read" on %I', t);
-    execute format('create policy "public read" on %I for select using (true)', t);
     execute format('drop policy if exists "auth write" on %I', t);
-    execute format('create policy "auth write" on %I for all using (auth.role() = ''authenticated'') with check (auth.role() = ''authenticated'')', t);
   end loop;
 end $$;
+
+drop policy if exists "profile insert self" on profiles;
+drop policy if exists "profile update self" on profiles;
+drop policy if exists "profile delete self" on profiles;
+drop policy if exists "league insert owner" on leagues;
+drop policy if exists "league update admin" on leagues;
+drop policy if exists "league delete admin" on leagues;
+drop policy if exists "league admins write" on league_admins;
+drop policy if exists "teams write" on teams;
+drop policy if exists "players write" on players;
+drop policy if exists "coaches write" on coaches;
+drop policy if exists "matches write" on matches;
+drop policy if exists "games write" on games;
+drop policy if exists "trades write" on trades;
+drop policy if exists "trade items write" on trade_items;
+drop policy if exists "transfer history write" on transfer_history;
+drop policy if exists "audit logs insert" on audit_logs;
+drop policy if exists "audit logs write" on audit_logs;
+drop policy if exists "import sources write" on import_sources;
+drop policy if exists "import jobs write" on import_jobs;
+
+create policy "public read" on profiles for select using (true);
+create policy "profile insert self" on profiles for insert to authenticated with check (id = auth.uid());
+create policy "profile update self" on profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+create policy "profile delete self" on profiles for delete to authenticated using (id = auth.uid());
+
+create policy "public read" on leagues for select using (true);
+create policy "league insert owner" on leagues for insert to authenticated with check (owner_user_id = auth.uid());
+create policy "league update admin" on leagues for update to authenticated
+  using (public.has_league_role(id, array['owner','admin']))
+  with check (public.has_league_role(id, array['owner','admin']));
+create policy "league delete admin" on leagues for delete to authenticated
+  using (public.has_league_role(id, array['owner','admin']));
+
+create policy "public read" on league_admins for select using (true);
+create policy "league admins write" on league_admins for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on teams for select using (true);
+create policy "teams write" on teams for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on players for select using (true);
+create policy "players write" on players for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on coaches for select using (true);
+create policy "coaches write" on coaches for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on matches for select using (true);
+create policy "matches write" on matches for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on games for select using (true);
+create policy "games write" on games for all to authenticated
+  using (exists (
+    select 1 from matches where matches.id = games.match_id
+      and public.has_league_role(matches.league_id, array['owner','admin'])
+  ))
+  with check (exists (
+    select 1 from matches where matches.id = games.match_id
+      and public.has_league_role(matches.league_id, array['owner','admin'])
+  ));
+
+create policy "public read" on trades for select using (true);
+create policy "trades write" on trades for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on trade_items for select using (true);
+create policy "trade items write" on trade_items for all to authenticated
+  using (exists (
+    select 1 from trades where trades.id = trade_items.trade_id
+      and public.has_league_role(trades.league_id, array['owner','admin'])
+  ))
+  with check (exists (
+    select 1 from trades where trades.id = trade_items.trade_id
+      and public.has_league_role(trades.league_id, array['owner','admin'])
+  ));
+
+create policy "public read" on transfer_history for select using (true);
+create policy "transfer history write" on transfer_history for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on audit_logs for select using (true);
+create policy "audit logs write" on audit_logs for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (
+    actor_user_id = auth.uid()
+    and public.has_league_role(league_id, array['owner','admin'])
+  );
+
+create policy "public read" on import_sources for select using (true);
+create policy "import sources write" on import_sources for all to authenticated
+  using (true) with check (true);
+
+create policy "public read" on import_jobs for select using (true);
+create policy "import jobs write" on import_jobs for all to authenticated
+  using (league_id is null or public.has_league_role(league_id, array['owner','admin']))
+  with check (league_id is null or public.has_league_role(league_id, array['owner','admin']));

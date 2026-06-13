@@ -16,6 +16,10 @@ export function useReady(): boolean {
   return useStore((s) => s.ready);
 }
 
+export function useDataStatus(): { loading: boolean; saving: boolean; error: string | null } {
+  return useStore((s) => ({ loading: s.loading, saving: s.saving, error: s.error }));
+}
+
 // Resolve a league by id or slug from the live db.
 export function useLeague(key: string): League | undefined {
   const db = useDb();
@@ -35,6 +39,7 @@ export function useLeagueRole(leagueId: string | undefined): 'owner' | 'admin' |
   useStore((s) => s.rev);
   if (!leagueId) return 'viewer';
   const { db, currentUserId } = useStore.getState();
+  if (db.leagues.some((league) => league.id === leagueId && league.owner_user_id === currentUserId)) return 'owner';
   const a = db.league_admins.find((x) => x.league_id === leagueId && x.user_id === currentUserId);
   return a?.role ?? 'viewer';
 }
