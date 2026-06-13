@@ -1,7 +1,7 @@
 'use client';
 
 import { useStore } from './store';
-import type { Database, League } from '@/lib/types';
+import type { Database, GuestSession, League } from '@/lib/types';
 import { leagueByIdOrSlug } from './selectors';
 
 // Subscribe to mutations (rev) and return the live, in-place-mutated db.
@@ -30,20 +30,30 @@ export function useMode(): 'mock' | 'supabase' {
   return useStore((s) => s.mode);
 }
 
-export function useCurrentUserId(): string {
-  return useStore((s) => s.currentUserId);
+export function useCurrentGuestId(): string {
+  return useStore((s) => s.currentGuestId);
+}
+
+export function useCurrentGuest(): GuestSession | undefined {
+  const db = useDb();
+  const guestId = useCurrentGuestId();
+  return db.guest_sessions.find((guest) => guest.id === guestId);
 }
 
 // Role of the current user in a league (owner/admin/manager/viewer).
 export function useLeagueRole(leagueId: string | undefined): 'owner' | 'admin' | 'manager' | 'viewer' {
   useStore((s) => s.rev);
   if (!leagueId) return 'viewer';
-  const { db, currentUserId } = useStore.getState();
-  if (db.leagues.some((league) => league.id === leagueId && league.owner_user_id === currentUserId)) return 'owner';
-  const a = db.league_admins.find((x) => x.league_id === leagueId && x.user_id === currentUserId);
+  const { db, currentGuestId } = useStore.getState();
+  if (db.leagues.some((league) => league.id === leagueId && league.owner_guest_id === currentGuestId)) return 'owner';
+  const a = db.league_admins.find((x) => x.league_id === leagueId && x.guest_id === currentGuestId);
   return a?.role ?? 'viewer';
 }
 
 export function canManage(role: string): boolean {
+  return role === 'owner' || role === 'admin' || role === 'manager';
+}
+
+export function canAdminister(role: string): boolean {
   return role === 'owner' || role === 'admin';
 }

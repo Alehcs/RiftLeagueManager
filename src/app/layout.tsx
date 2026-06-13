@@ -3,6 +3,7 @@ import './globals.css';
 import { StoreInitializer } from '@/components/layout/StoreInitializer';
 import { Navbar } from '@/components/layout/Navbar';
 import { Toaster } from '@/components/ui/toaster';
+import { GuestSessionGate } from '@/components/guest/GuestSessionGate';
 
 export const metadata: Metadata = {
   title: 'Rift League Manager — LoL Esports League Simulator',
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="dark">
       <body>
         <StoreInitializer />
+        <GuestSessionGate />
         <div className="flex min-h-screen flex-col">
           <Navbar />
           <main className="flex-1">{children}</main>

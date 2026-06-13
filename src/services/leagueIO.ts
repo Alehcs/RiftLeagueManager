@@ -1,5 +1,5 @@
 import type { Database, LeagueExport } from '@/lib/types';
-import { nowISO, uid } from '@/lib/utils';
+import { createRoomCode, nowISO, uid } from '@/lib/utils';
 
 // ============================================================================
 // Full-league JSON export / import (bundle = one league + all its entities).
@@ -24,7 +24,7 @@ export function buildLeagueExport(db: Database, leagueId: string): LeagueExport 
   return {
     format: 'rift-league-manager/v1',
     exported_at: nowISO(),
-    league,
+    league: { ...league, admin_code_hash: null },
     teams,
     players,
     coaches,
@@ -79,7 +79,9 @@ export function reidLeagueExport(
     id: leagueId,
     name: opts?.name ?? bundle.league.name,
     slug: opts?.slug ?? bundle.league.slug,
-    owner_user_id: opts?.ownerId ?? bundle.league.owner_user_id,
+    owner_guest_id: opts?.ownerId ?? bundle.league.owner_guest_id ?? bundle.league.owner_user_id ?? '',
+    room_code: createRoomCode(),
+    admin_code_hash: null,
     is_seed: false,
     created_at: ts,
     updated_at: ts,
@@ -144,7 +146,7 @@ export function reidLeagueExport(
     {
       id: uid('la'),
       league_id: leagueId,
-      user_id: opts?.ownerId ?? bundle.league.owner_user_id,
+      guest_id: opts?.ownerId ?? bundle.league.owner_guest_id ?? bundle.league.owner_user_id ?? '',
       role: 'owner' as const,
       team_id: null,
     },

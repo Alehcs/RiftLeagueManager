@@ -16,6 +16,16 @@ create table if not exists profiles (
   created_at timestamptz not null default now()
 );
 
+-- guest sessions -------------------------------------------------------------
+create table if not exists guest_sessions (
+  id uuid primary key default gen_random_uuid(),
+  auth_user_id uuid not null unique,
+  display_name text not null check (char_length(display_name) between 2 and 32),
+  avatar_color text not null,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+
 -- leagues --------------------------------------------------------------------
 create table if not exists leagues (
   id uuid primary key default gen_random_uuid(),
@@ -30,6 +40,9 @@ create table if not exists leagues (
   source_url text,
   format text not null,
   owner_user_id uuid references profiles(id) on delete set null,
+  owner_guest_id uuid references guest_sessions(id) on delete set null,
+  room_code text unique,
+  admin_code_hash text,
   is_seed boolean default false,
   last_imported_at timestamptz,
   created_at timestamptz not null default now(),
@@ -39,11 +52,23 @@ create table if not exists leagues (
 create table if not exists league_admins (
   id uuid primary key default gen_random_uuid(),
   league_id uuid not null references leagues(id) on delete cascade,
-  user_id uuid not null references profiles(id) on delete cascade,
+  user_id uuid references profiles(id) on delete cascade,
+  guest_id uuid references guest_sessions(id) on delete cascade,
   role text not null check (role in ('owner','admin','manager','viewer')),
   team_id uuid,
-  unique (league_id, user_id)
+  unique (league_id, user_id),
+  unique (league_id, guest_id)
 );
+
+create table if not exists league_members (
+  id uuid primary key default gen_random_uuid(),
+  league_id uuid not null references leagues(id) on delete cascade,
+  guest_id uuid not null references guest_sessions(id) on delete cascade,
+  role text not null default 'viewer' check (role in ('owner','admin','manager','viewer')),
+  joined_at timestamptz not null default now(),
+  unique (league_id, guest_id)
+);
+create index if not exists league_members_guest_idx on league_members(guest_id);
 
 -- teams ----------------------------------------------------------------------
 create table if not exists teams (
@@ -189,6 +214,8 @@ create table if not exists trades (
   status text not null default 'pending' check (status in ('pending','accepted','rejected','cancelled')),
   proposed_by_user_id uuid,
   reviewed_by_user_id uuid,
+  proposed_by_guest_id uuid references guest_sessions(id) on delete set null,
+  reviewed_by_guest_id uuid references guest_sessions(id) on delete set null,
   created_at timestamptz not null default now(),
   reviewed_at timestamptz
 );
@@ -237,6 +264,7 @@ create table if not exists audit_logs (
   id uuid primary key default gen_random_uuid(),
   league_id uuid references leagues(id) on delete cascade,
   actor_user_id uuid,
+  actor_guest_id uuid references guest_sessions(id) on delete set null,
   action_type text not null,
   entity_type text not null,
   entity_id uuid,
@@ -245,6 +273,22 @@ create table if not exists audit_logs (
   created_at timestamptz not null default now()
 );
 
+-- Compatibility for projects that applied an earlier version of this migration.
+alter table leagues add column if not exists owner_guest_id uuid references guest_sessions(id) on delete set null;
+alter table leagues add column if not exists room_code text;
+alter table leagues add column if not exists admin_code_hash text;
+create unique index if not exists leagues_room_code_idx on leagues(room_code);
+update leagues
+set room_code = upper(substr(encode(digest(id::text, 'sha256'), 'hex'), 1, 8))
+where room_code is null;
+alter table leagues alter column room_code set not null;
+alter table league_admins alter column user_id drop not null;
+alter table league_admins add column if not exists guest_id uuid references guest_sessions(id) on delete cascade;
+create unique index if not exists league_admins_guest_idx on league_admins(league_id, guest_id);
+alter table trades add column if not exists proposed_by_guest_id uuid references guest_sessions(id) on delete set null;
+alter table trades add column if not exists reviewed_by_guest_id uuid references guest_sessions(id) on delete set null;
+alter table audit_logs add column if not exists actor_guest_id uuid references guest_sessions(id) on delete set null;
+
 -- Realtime: add the live tables to the supabase_realtime publication.
 do $$
 declare t text;
@@ -252,7 +296,7 @@ begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     foreach t in array array[
       'matches','games','teams','players','coaches','trades','trade_items',
-      'transfer_history','audit_logs'
+      'transfer_history','audit_logs','league_members'
     ] loop
       if not exists (
         select 1 from pg_publication_tables
@@ -266,6 +310,16 @@ exception when others then null;
 end $$;
 
 -- Row Level Security ---------------------------------------------------------
+create or replace function public.current_guest_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select id from public.guest_sessions where auth_user_id = auth.uid() limit 1;
+$$;
+
 create or replace function public.has_league_role(target_league_id uuid, allowed_roles text[])
 returns boolean
 language sql
@@ -275,23 +329,26 @@ set search_path = ''
 as $$
   select exists (
     select 1 from public.leagues
-    where id = target_league_id and owner_user_id = auth.uid()
+    where id = target_league_id
+      and (owner_guest_id = public.current_guest_id() or owner_user_id = auth.uid())
   ) or exists (
     select 1 from public.league_admins
     where league_id = target_league_id
-      and user_id = auth.uid()
+      and (guest_id = public.current_guest_id() or user_id = auth.uid())
       and role = any(allowed_roles)
   );
 $$;
 
+revoke all on function public.current_guest_id() from public;
 revoke all on function public.has_league_role(uuid, text[]) from public;
+grant execute on function public.current_guest_id() to anon, authenticated;
 grant execute on function public.has_league_role(uuid, text[]) to anon, authenticated;
 
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'profiles','leagues','league_admins','teams','players','coaches','matches','games',
+    'profiles','guest_sessions','leagues','league_admins','league_members','teams','players','coaches','matches','games',
     'trades','trade_items','transfer_history','import_sources','import_jobs','audit_logs'
   ] loop
     execute format('alter table %I enable row level security', t);
@@ -303,10 +360,15 @@ end $$;
 drop policy if exists "profile insert self" on profiles;
 drop policy if exists "profile update self" on profiles;
 drop policy if exists "profile delete self" on profiles;
+drop policy if exists "guest sessions insert" on guest_sessions;
+drop policy if exists "guest sessions update" on guest_sessions;
 drop policy if exists "league insert owner" on leagues;
 drop policy if exists "league update admin" on leagues;
 drop policy if exists "league delete admin" on leagues;
 drop policy if exists "league admins write" on league_admins;
+drop policy if exists "league members self join" on league_members;
+drop policy if exists "league members self leave" on league_members;
+drop policy if exists "league members admin write" on league_members;
 drop policy if exists "teams write" on teams;
 drop policy if exists "players write" on players;
 drop policy if exists "coaches write" on coaches;
@@ -321,12 +383,16 @@ drop policy if exists "import sources write" on import_sources;
 drop policy if exists "import jobs write" on import_jobs;
 
 create policy "public read" on profiles for select using (true);
-create policy "profile insert self" on profiles for insert to authenticated with check (id = auth.uid());
-create policy "profile update self" on profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
-create policy "profile delete self" on profiles for delete to authenticated using (id = auth.uid());
+
+create policy "public read" on guest_sessions for select using (true);
+create policy "guest sessions insert" on guest_sessions for insert to authenticated
+  with check (auth_user_id = auth.uid());
+create policy "guest sessions update" on guest_sessions for update to authenticated
+  using (auth_user_id = auth.uid()) with check (auth_user_id = auth.uid());
 
 create policy "public read" on leagues for select using (true);
-create policy "league insert owner" on leagues for insert to authenticated with check (owner_user_id = auth.uid());
+create policy "league insert owner" on leagues for insert to authenticated
+  with check (owner_guest_id = public.current_guest_id());
 create policy "league update admin" on leagues for update to authenticated
   using (public.has_league_role(id, array['owner','admin']))
   with check (public.has_league_role(id, array['owner','admin']));
@@ -338,71 +404,127 @@ create policy "league admins write" on league_admins for all to authenticated
   using (public.has_league_role(league_id, array['owner','admin']))
   with check (public.has_league_role(league_id, array['owner','admin']));
 
-create policy "public read" on teams for select using (true);
-create policy "teams write" on teams for all to authenticated
+create policy "public read" on league_members for select using (true);
+create policy "league members self join" on league_members for insert to authenticated
+  with check (guest_id = public.current_guest_id() and role = 'viewer');
+create policy "league members self leave" on league_members for delete to authenticated
+  using (guest_id = public.current_guest_id() and role = 'viewer');
+create policy "league members admin write" on league_members for all to authenticated
   using (public.has_league_role(league_id, array['owner','admin']))
   with check (public.has_league_role(league_id, array['owner','admin']));
+
+create policy "public read" on teams for select using (true);
+create policy "teams write" on teams for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (public.has_league_role(league_id, array['owner','admin','manager']));
 
 create policy "public read" on players for select using (true);
 create policy "players write" on players for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin']))
-  with check (public.has_league_role(league_id, array['owner','admin']));
+  using (public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (public.has_league_role(league_id, array['owner','admin','manager']));
 
 create policy "public read" on coaches for select using (true);
 create policy "coaches write" on coaches for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin']))
-  with check (public.has_league_role(league_id, array['owner','admin']));
+  using (public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (public.has_league_role(league_id, array['owner','admin','manager']));
 
 create policy "public read" on matches for select using (true);
 create policy "matches write" on matches for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin']))
-  with check (public.has_league_role(league_id, array['owner','admin']));
+  using (public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (public.has_league_role(league_id, array['owner','admin','manager']));
 
 create policy "public read" on games for select using (true);
 create policy "games write" on games for all to authenticated
   using (exists (
     select 1 from matches where matches.id = games.match_id
-      and public.has_league_role(matches.league_id, array['owner','admin'])
+      and public.has_league_role(matches.league_id, array['owner','admin','manager'])
   ))
   with check (exists (
     select 1 from matches where matches.id = games.match_id
-      and public.has_league_role(matches.league_id, array['owner','admin'])
+      and public.has_league_role(matches.league_id, array['owner','admin','manager'])
   ));
 
 create policy "public read" on trades for select using (true);
 create policy "trades write" on trades for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin']))
-  with check (public.has_league_role(league_id, array['owner','admin']));
+  using (public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (public.has_league_role(league_id, array['owner','admin','manager']));
 
 create policy "public read" on trade_items for select using (true);
 create policy "trade items write" on trade_items for all to authenticated
   using (exists (
     select 1 from trades where trades.id = trade_items.trade_id
-      and public.has_league_role(trades.league_id, array['owner','admin'])
+      and public.has_league_role(trades.league_id, array['owner','admin','manager'])
   ))
   with check (exists (
     select 1 from trades where trades.id = trade_items.trade_id
-      and public.has_league_role(trades.league_id, array['owner','admin'])
+      and public.has_league_role(trades.league_id, array['owner','admin','manager'])
   ));
 
 create policy "public read" on transfer_history for select using (true);
 create policy "transfer history write" on transfer_history for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin']))
-  with check (public.has_league_role(league_id, array['owner','admin']));
+  using (public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (public.has_league_role(league_id, array['owner','admin','manager']));
 
 create policy "public read" on audit_logs for select using (true);
 create policy "audit logs write" on audit_logs for all to authenticated
   using (public.has_league_role(league_id, array['owner','admin']))
   with check (
-    actor_user_id = auth.uid()
-    and public.has_league_role(league_id, array['owner','admin'])
+    actor_guest_id = public.current_guest_id()
+    and public.has_league_role(league_id, array['owner','admin','manager'])
   );
 
 create policy "public read" on import_sources for select using (true);
 create policy "import sources write" on import_sources for all to authenticated
-  using (true) with check (true);
+  using (public.current_guest_id() is not null) with check (public.current_guest_id() is not null);
 
 create policy "public read" on import_jobs for select using (true);
 create policy "import jobs write" on import_jobs for all to authenticated
-  using (league_id is null or public.has_league_role(league_id, array['owner','admin']))
-  with check (league_id is null or public.has_league_role(league_id, array['owner','admin']));
+  using (league_id is null or public.has_league_role(league_id, array['owner','admin','manager']))
+  with check (league_id is null or public.has_league_role(league_id, array['owner','admin','manager']));
+
+create or replace function public.recover_league_admin(
+  target_room_code text,
+  recovery_code text,
+  target_guest_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target_league_id uuid;
+begin
+  if public.current_guest_id() is distinct from target_guest_id then
+    raise exception 'Guest session mismatch';
+  end if;
+
+  select id into target_league_id
+  from public.leagues
+  where room_code = upper(trim(target_room_code))
+    and admin_code_hash = encode(public.digest(recovery_code, 'sha256'), 'hex');
+
+  if target_league_id is null then return null; end if;
+
+  insert into public.league_admins (league_id, guest_id, role, team_id)
+  values (target_league_id, target_guest_id, 'admin', null)
+  on conflict (league_id, guest_id) do update set role = 'admin', team_id = null;
+
+  insert into public.league_members (league_id, guest_id, role)
+  values (target_league_id, target_guest_id, 'admin')
+  on conflict (league_id, guest_id) do update set role = 'admin';
+
+  return target_league_id;
+end;
+$$;
+
+revoke all on function public.recover_league_admin(text, text, uuid) from public;
+grant execute on function public.recover_league_admin(text, text, uuid) to authenticated;
+
+-- Keep auth bindings and recovery hashes out of public room reads.
+revoke select on guest_sessions from anon, authenticated;
+grant select (id, display_name, avatar_color, created_at, last_seen_at) on guest_sessions to anon, authenticated;
+revoke select on leagues from anon, authenticated;
+grant select (
+  id, name, slug, region, tier, season, logo_url, external_url, source_name, source_url,
+  format, owner_user_id, owner_guest_id, room_code, is_seed, last_imported_at, created_at, updated_at
+) on leagues to anon, authenticated;

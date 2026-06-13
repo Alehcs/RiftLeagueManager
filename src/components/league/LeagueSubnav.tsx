@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { canAdminister, useLeagueRole } from '@/lib/store/hooks';
 import {
   LayoutGrid, ListOrdered, CalendarDays, Users2, User, GraduationCap,
   Store, ArrowLeftRight, Trophy, Settings,
@@ -23,11 +24,12 @@ const TABS = [
 
 export function LeagueSubnav({ leagueId }: { leagueId: string }) {
   const pathname = usePathname();
+  const role = useLeagueRole(leagueId);
   const base = `/leagues/${leagueId}`;
   return (
     <div className="sticky top-14 z-30 -mx-4 mb-6 border-b border-border bg-bg/80 px-4 backdrop-blur-md">
       <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TABS.map((t) => {
+        {TABS.filter((tab) => tab.seg !== 'admin' || canAdminister(role)).map((t) => {
           const href = t.seg ? `${base}/${t.seg}` : base;
           const active = t.seg ? pathname.startsWith(href) : pathname === base;
           return (

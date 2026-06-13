@@ -1,7 +1,9 @@
 'use client';
 
 import type { SupabaseClient, User } from '@supabase/supabase-js';
-import { EMPTY_DB, type Database } from '@/lib/types';
+import { GUEST_STORAGE_KEY } from '@/lib/constants';
+import { nowISO } from '@/lib/utils';
+import { EMPTY_DB, type Database, type GuestSession } from '@/lib/types';
 import type { DataAdapter, DataEvent, DataSnapshot } from './index';
 
 type TableName = keyof Database;
@@ -10,9 +12,11 @@ type Row = Database[TableName][number];
 const TABLES = Object.keys(EMPTY_DB) as TableName[];
 const UPSERT_ORDER: TableName[] = [
   'profiles',
+  'guest_sessions',
   'leagues',
   'teams',
   'league_admins',
+  'league_members',
   'players',
   'coaches',
   'matches',
@@ -36,7 +40,9 @@ const DELETE_ORDER: TableName[] = [
   'coaches',
   'players',
   'teams',
+  'league_members',
   'league_admins',
+  'guest_sessions',
   'import_sources',
   'profiles',
 ];
@@ -50,11 +56,13 @@ const REALTIME_TABLES: TableName[] = [
   'trade_items',
   'transfer_history',
   'audit_logs',
+  'league_members',
 ];
 
 export class SupabaseAdapter implements DataAdapter {
   readonly mode = 'supabase' as const;
-  private currentUserId = '';
+  private currentGuestId = '';
+  private authUserId = '';
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
   private activeWrites = 0;
   private reloadAfterWrite = false;
@@ -65,22 +73,33 @@ export class SupabaseAdapter implements DataAdapter {
 
   async loadDatabase(): Promise<DataSnapshot> {
     const user = await this.getAuthenticatedUser(true);
-    this.currentUserId = user?.id ?? '';
-    if (user) await this.ensureProfile(user);
+    this.authUserId = user?.id ?? '';
+    this.currentGuestId = this.readGuestId();
+    const boundGuest = await this.client.rpc('current_guest_id');
+    if (boundGuest.error) throw new Error(boundGuest.error.message);
+    const boundGuestId = boundGuest.data ? String(boundGuest.data) : '';
+    if (boundGuestId && (!this.currentGuestId || this.currentGuestId === boundGuestId)) this.setGuestId(boundGuestId);
+    else if (this.currentGuestId !== boundGuestId) this.setGuestId(null);
 
     const entries = await Promise.all(TABLES.map(async (table) => [table, await this.readTable(table)] as const));
     const db = structuredClone(EMPTY_DB);
     for (const [table, rows] of entries) {
       (db[table] as Row[]) = rows;
     }
-    return { db, currentUserId: this.currentUserId };
+    if (this.currentGuestId && db.guest_sessions.some((guest) => guest.id === this.currentGuestId)) {
+      await this.client.from('guest_sessions').update({ last_seen_at: nowISO() }).eq('id', this.currentGuestId);
+    } else {
+      this.setGuestId(null);
+    }
+    return { db, currentGuestId: this.currentGuestId };
   }
 
-  async saveDatabase(previous: Database, next: Database, _event?: DataEvent): Promise<void> {
+  async saveDatabase(previous: Database, next: Database, _event?: DataEvent, _options?: { system?: boolean }): Promise<void> {
     const user = await this.getAuthenticatedUser(true);
-    this.currentUserId = user?.id ?? '';
-    if (!user) throw new Error('Sign in to Supabase before changing league data.');
-    this.assertAuthorized(previous, next, user.id);
+    this.authUserId = user?.id ?? '';
+    if (!user) throw new Error('Unable to start the guest session. Check anonymous auth settings.');
+    if (!this.currentGuestId) this.currentGuestId = this.readGuestId();
+    this.assertAuthorized(previous, next, this.currentGuestId);
 
     this.activeWrites++;
     try {
@@ -142,6 +161,61 @@ export class SupabaseAdapter implements DataAdapter {
     this.reloadTimer = null;
   }
 
+  setGuestId(guestId: string | null): void {
+    this.currentGuestId = guestId ?? '';
+    if (typeof window === 'undefined') return;
+    if (guestId) window.localStorage.setItem(GUEST_STORAGE_KEY, guestId);
+    else window.localStorage.removeItem(GUEST_STORAGE_KEY);
+  }
+
+  async resetGuestIdentity(): Promise<void> {
+    this.setGuestId(null);
+    this.anonymousAttempted = false;
+    this.authUserId = '';
+    const { error } = await this.client.auth.signOut({ scope: 'local' });
+    if (error) throw error;
+  }
+
+  async recoverAdmin(roomCode: string, recoveryCode: string, guestId: string): Promise<string> {
+    const { data, error } = await this.client.rpc('recover_league_admin', {
+      target_room_code: roomCode.trim().toUpperCase(),
+      recovery_code: recoveryCode,
+      target_guest_id: guestId,
+    });
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error('Invalid room or recovery code.');
+    return String(data);
+  }
+
+  trackPresence(
+    leagueId: string,
+    guest: GuestSession,
+    onChange: (guests: GuestSession[]) => void,
+    onError: (error: Error) => void,
+  ): () => void {
+    const channel = this.client.channel(`league-presence:${leagueId}`, { config: { presence: { key: guest.id } } });
+    const sync = () => {
+      const state = channel.presenceState<GuestSession>();
+      const unique = new Map<string, GuestSession>();
+      for (const entries of Object.values(state)) {
+        for (const entry of entries) unique.set(entry.id, entry);
+      }
+      onChange([...unique.values()]);
+    };
+    channel.on('presence', { event: 'sync' }, sync);
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        void channel.track({ ...guest, last_seen_at: nowISO() }).catch((error) => onError(asError(error)));
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        onError(new Error(`Presence connection failed: ${status.toLowerCase()}`));
+      }
+    });
+    return () => {
+      void channel.untrack();
+      void this.client.removeChannel(channel);
+    };
+  }
+
   private async getAuthenticatedUser(createAnonymous = false): Promise<User | null> {
     const { data, error } = await this.client.auth.getUser();
     if (error && !error.message.toLowerCase().includes('session')) throw error;
@@ -153,30 +227,23 @@ export class SupabaseAdapter implements DataAdapter {
     return anonymous.data.user;
   }
 
-  private async ensureProfile(user: User): Promise<void> {
-    const username =
-      (typeof user.user_metadata?.username === 'string' && user.user_metadata.username) ||
-      user.email?.split('@')[0] ||
-      'User';
-    const { error } = await this.client.from('profiles').upsert(
-      {
-        id: user.id,
-        email: user.email ?? `${user.id}@local.invalid`,
-        username,
-        avatar_url: typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : null,
-      },
-      { onConflict: 'id', ignoreDuplicates: true },
-    );
-    if (error) throw error;
+  private readGuestId(): string {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem(GUEST_STORAGE_KEY) ?? '';
   }
 
   private async readTable(table: TableName): Promise<Row[]> {
     const pageSize = 1000;
     const rows: Row[] = [];
     for (let from = 0; ; from += pageSize) {
-      const { data, error } = await this.client.from(table).select('*').range(from, from + pageSize - 1);
+      const response = table === 'guest_sessions'
+        ? await this.client.from('guest_sessions').select('id, display_name, avatar_color, created_at, last_seen_at').range(from, from + pageSize - 1)
+        : table === 'leagues'
+          ? await this.client.from('leagues').select('id, name, slug, region, tier, season, logo_url, external_url, source_name, source_url, format, owner_guest_id, owner_user_id, room_code, is_seed, last_imported_at, created_at, updated_at').range(from, from + pageSize - 1)
+          : await this.client.from(table).select('*').range(from, from + pageSize - 1);
+      const { data, error } = response;
       if (error) throw new Error(`Unable to load ${table}: ${error.message}`);
-      const page = (data ?? []).map((row) => fromSupabaseRow(table, row as Record<string, unknown>));
+      const page = (data ?? []).map((row) => fromSupabaseRow(table, row as unknown as Record<string, unknown>));
       rows.push(...page);
       if (page.length < pageSize) break;
     }
@@ -192,28 +259,56 @@ export class SupabaseAdapter implements DataAdapter {
 
   private async upsertRows(table: TableName, rows: Row[]): Promise<void> {
     for (const batch of chunks(rows, 200)) {
-      const payload = batch.map((row) => toSupabaseRow(table, row));
+      const payload = await Promise.all(batch.map((row) => this.toSupabaseRow(table, row)));
       const { error } = await this.client.from(table).upsert(payload, { onConflict: 'id' });
       if (error) throw new Error(`Unable to save ${table}: ${error.message}`);
     }
   }
 
-  private assertAuthorized(previous: Database, next: Database, userId: string): void {
+  private async toSupabaseRow(table: TableName, row: Row): Promise<Record<string, unknown>> {
+    const payload = { ...row } as Record<string, unknown>;
+    if (table === 'audit_logs') {
+      payload.before_json = parseJson(payload.before_json);
+      payload.after_json = parseJson(payload.after_json);
+    }
+    if (table === 'guest_sessions') payload.auth_user_id = this.authUserId;
+    if (table === 'leagues' && typeof payload.admin_code_hash === 'string' && payload.admin_code_hash.startsWith('plain:')) {
+      payload.admin_code_hash = await sha256(payload.admin_code_hash.slice(6));
+    }
+    return payload;
+  }
+
+  private assertAuthorized(previous: Database, next: Database, guestId: string): void {
+    if (!guestId) throw new Error('Choose a nickname before changing league data.');
     const editable = new Set<string>();
+    const administrable = new Set<string>();
     for (const db of [previous, next]) {
-      db.leagues.filter((league) => league.owner_user_id === userId).forEach((league) => editable.add(league.id));
+      db.leagues
+        .filter((league) => league.owner_guest_id === guestId)
+        .forEach((league) => {
+          editable.add(league.id);
+          administrable.add(league.id);
+        });
       db.league_admins
-        .filter((admin) => admin.user_id === userId && (admin.role === 'owner' || admin.role === 'admin'))
+        .filter((admin) => admin.guest_id === guestId && ['owner', 'admin', 'manager'].includes(admin.role))
         .forEach((admin) => editable.add(admin.league_id));
+      db.league_admins
+        .filter((admin) => admin.guest_id === guestId && ['owner', 'admin'].includes(admin.role))
+        .forEach((admin) => administrable.add(admin.league_id));
     }
 
+    const restricted = restrictedLeagueIds(previous, next);
+    if ([...restricted].some((leagueId) => !administrable.has(leagueId))) {
+      throw new Error('Only a league owner or admin can change league settings or permissions.');
+    }
     const touched = touchedLeagueIds(previous, next);
     const unauthorized = [...touched].filter((leagueId) => !editable.has(leagueId));
-    if (unauthorized.length) throw new Error('You need league owner or admin access to make this change.');
+    if (unauthorized.length) throw new Error('You need manager, admin, or owner access to make this change.');
+    assertMemberChangesAuthorized(previous, next, guestId, administrable);
 
-    const changedProfiles = changedRows(previous.profiles, next.profiles);
-    if (changedProfiles.some((profile) => profile.id !== userId)) {
-      throw new Error('You can only update your own profile.');
+    const changedGuests = changedRows(previous.guest_sessions, next.guest_sessions);
+    if (changedGuests.some((guest) => guest.id !== guestId)) {
+      throw new Error('You can only update your own guest profile.');
     }
   }
 }
@@ -271,6 +366,44 @@ function touchedLeagueIds(previous: Database, next: Database): Set<string> {
   return result;
 }
 
+function restrictedLeagueIds(previous: Database, next: Database): Set<string> {
+  const result = new Set<string>();
+  for (const league of [...changedRows(previous.leagues, next.leagues), ...deletedRows(previous.leagues, next.leagues)]) {
+    result.add(league.id);
+  }
+  for (const admin of [
+    ...changedRows(previous.league_admins, next.league_admins),
+    ...deletedRows(previous.league_admins, next.league_admins),
+  ]) {
+    result.add(admin.league_id);
+  }
+  return result;
+}
+
+function assertMemberChangesAuthorized(
+  previous: Database,
+  next: Database,
+  guestId: string,
+  administrable: Set<string>,
+): void {
+  const before = new Map(previous.league_members.map((member) => [member.id, member]));
+  const after = new Map(next.league_members.map((member) => [member.id, member]));
+  const changed = new Set([
+    ...changedRows(previous.league_members, next.league_members).map((member) => member.id),
+    ...deletedRows(previous.league_members, next.league_members).map((member) => member.id),
+  ]);
+  for (const id of changed) {
+    const oldMember = before.get(id);
+    const newMember = after.get(id);
+    const leagueId = newMember?.league_id ?? oldMember?.league_id ?? '';
+    if (administrable.has(leagueId)) continue;
+    const isSelfViewer = [oldMember, newMember]
+      .filter((member): member is NonNullable<typeof member> => Boolean(member))
+      .every((member) => member.guest_id === guestId && member.role === 'viewer' && member.league_id === leagueId);
+    if (!isSelfViewer) throw new Error('Only a league owner or admin can change member permissions.');
+  }
+}
+
 function deletedRows<T extends { id: string }>(previous: T[], next: T[]): T[] {
   const remaining = new Set(next.map((row) => row.id));
   return previous.filter((row) => !remaining.has(row.id));
@@ -283,15 +416,6 @@ function fromSupabaseRow(table: TableName, row: Record<string, unknown>): Row {
     before_json: row.before_json == null ? null : JSON.stringify(row.before_json),
     after_json: row.after_json == null ? null : JSON.stringify(row.after_json),
   } as Row;
-}
-
-function toSupabaseRow(table: TableName, row: Row): Record<string, unknown> {
-  const payload = { ...row } as Record<string, unknown>;
-  if (table === 'audit_logs') {
-    payload.before_json = parseJson(payload.before_json);
-    payload.after_json = parseJson(payload.after_json);
-  }
-  return payload;
 }
 
 function parseJson(value: unknown): unknown {
@@ -311,4 +435,10 @@ function chunks<T>(items: T[], size: number): T[][] {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }

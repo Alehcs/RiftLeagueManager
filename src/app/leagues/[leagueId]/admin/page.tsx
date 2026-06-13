@@ -6,7 +6,7 @@ import {
   Settings, Users2, CalendarRange, Database, Shield, AlertOctagon, ScrollText,
   Download, Upload, Plus, Pencil, Trash2, Copy, RotateCcw, FileJson, FileSpreadsheet, Image as ImageIcon,
 } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { teamsOf, playersOf, matchesOf, importJobsOf, auditLogsOf } from '@/lib/store/selectors';
 import type { LeagueFormat, LeagueTier } from '@/lib/types';
@@ -39,7 +39,7 @@ export default function AdminPage({ params }: { params: { leagueId: string } }) 
   const [section, setSection] = useState<SectionId>('settings');
 
   if (!league) return null;
-  if (!canManage(role)) {
+  if (!canAdminister(role)) {
     return <EmptyState title="Admin access required" hint="Only league owners and admins can manage settings." icon={<Shield size={36} />} />;
   }
 
@@ -316,10 +316,11 @@ function IoSection({ leagueId }: { leagueId: string }) {
 function AdminsSection({ leagueId }: { leagueId: string }) {
   const db = useDb();
   const admins = db.league_admins.filter((a) => a.league_id === leagueId);
+  const members = db.league_members.filter((member) => member.league_id === leagueId);
   const teams = teamsOf(db, leagueId);
   const setAdmin = useStore((s) => s.setLeagueAdmin);
   const removeAdmin = useStore((s) => s.removeLeagueAdmin);
-  const [name, setName] = useState('');
+  const [guestId, setGuestId] = useState('');
   const [r, setR] = useState<'admin' | 'manager' | 'viewer'>('manager');
   const [team, setTeam] = useState('');
 
@@ -329,15 +330,15 @@ function AdminsSection({ leagueId }: { leagueId: string }) {
       <CardBody className="space-y-4">
         <div className="space-y-2">
           {admins.map((a) => {
-            const profile = db.profiles.find((p) => p.id === a.user_id);
+            const guest = db.guest_sessions.find((item) => item.id === a.guest_id);
             const team = teams.find((t) => t.id === a.team_id);
             return (
               <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/40 px-3 py-2 text-sm">
-                <span className="flex-1 text-slate-200">{profile?.username ?? a.user_id}</span>
+                <span className="flex-1 text-slate-200">{guest?.display_name ?? a.guest_id}</span>
                 {team && <Badge color="#3b82f6">{team.short_name}</Badge>}
                 <Badge color={a.role === 'owner' ? '#c8a85a' : '#26d0ce'}>{a.role}</Badge>
                 {a.role !== 'owner' && (
-                  <Button variant="ghost" size="sm" onClick={() => removeAdmin(leagueId, a.user_id)}><Trash2 size={13} /></Button>
+                  <Button variant="ghost" size="sm" onClick={() => removeAdmin(leagueId, a.guest_id)}><Trash2 size={13} /></Button>
                 )}
               </div>
             );
@@ -345,7 +346,13 @@ function AdminsSection({ leagueId }: { leagueId: string }) {
         </div>
         <Divider />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-          <Input placeholder="User name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Select value={guestId} onChange={(e) => setGuestId(e.target.value)}>
+            <option value="">Select joined guest…</option>
+            {members.map((member) => {
+              const guest = db.guest_sessions.find((item) => item.id === member.guest_id);
+              return <option key={member.guest_id} value={member.guest_id}>{guest?.display_name ?? member.guest_id}</option>;
+            })}
+          </Select>
           <Select value={r} onChange={(e) => setR(e.target.value as typeof r)}>
             <option value="admin">Admin</option>
             <option value="manager">Manager</option>
@@ -357,20 +364,16 @@ function AdminsSection({ leagueId }: { leagueId: string }) {
           </Select>
           <Button
             variant="primary"
-            disabled={!name.trim()}
+            disabled={!guestId}
             onClick={() => {
-              const uid = `user-${name.trim().toLowerCase().replace(/\s+/g, '-')}`;
-              if (!db.profiles.find((p) => p.id === uid)) {
-                db.profiles.push({ id: uid, email: `${uid}@local`, username: name.trim(), avatar_url: null, created_at: new Date().toISOString() });
-              }
-              setAdmin(leagueId, uid, r, r === 'manager' ? team || null : null);
-              setName('');
+              setAdmin(leagueId, guestId, r, r === 'manager' ? team || null : null);
+              setGuestId('');
             }}
           >
             <Plus size={14} /> Add
           </Button>
         </div>
-        <p className="text-[11px] text-slate-600">Managers can be scoped to a team. In mock mode users are local placeholders.</p>
+        <p className="text-[11px] text-slate-600">Guests must join the room before they can be promoted. Managers can be scoped to a team.</p>
       </CardBody>
     </Card>
   );

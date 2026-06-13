@@ -1,6 +1,6 @@
 'use client';
 
-import type { Database } from '@/lib/types';
+import type { Database, GuestSession } from '@/lib/types';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
 import { MockAdapter } from './mockAdapter';
 import { SupabaseAdapter } from './supabaseAdapter';
@@ -14,13 +14,22 @@ export interface DataEvent {
 
 export interface DataSnapshot {
   db: Database;
-  currentUserId: string;
+  currentGuestId: string;
 }
 
 export interface DataAdapter {
   readonly mode: DataMode;
   loadDatabase(): Promise<DataSnapshot>;
-  saveDatabase(previous: Database, next: Database, event?: DataEvent): Promise<void>;
+  saveDatabase(previous: Database, next: Database, event?: DataEvent, options?: { system?: boolean }): Promise<void>;
+  setGuestId(guestId: string | null): void;
+  resetGuestIdentity(): Promise<void>;
+  recoverAdmin(roomCode: string, recoveryCode: string, guestId: string): Promise<string>;
+  trackPresence(
+    leagueId: string,
+    guest: GuestSession,
+    onChange: (guests: GuestSession[]) => void,
+    onError: (error: Error) => void,
+  ): () => void;
   subscribe(
     onChange: (snapshot: DataSnapshot, event?: DataEvent) => void,
     onError: (error: Error) => void,

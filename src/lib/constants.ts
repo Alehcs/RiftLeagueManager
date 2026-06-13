@@ -123,4 +123,5 @@ export function regionBadge(region: string): { label: string; color: string } {
 // ---------------------------------------------------------------------------
 export const STORAGE_KEY = 'rlm.db.v1';
 export const BROADCAST_CHANNEL = 'rlm.realtime.v1';
+export const GUEST_STORAGE_KEY = 'rlm.guest.v1';
 export const DEMO_USER_ID = 'user-demo';

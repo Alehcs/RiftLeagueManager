@@ -6,6 +6,7 @@ import type {
   Coach,
   Database,
   Game,
+  GuestSession,
   ImportJob,
   League,
   LeagueFormat,
@@ -16,8 +17,7 @@ import type {
   TradeStatus,
 } from '@/lib/types';
 import { EMPTY_DB } from '@/lib/types';
-import { DEMO_USER_ID } from '@/lib/constants';
-import { nowISO, uid } from '@/lib/utils';
+import { avatarColor, createRoomCode, nowISO, uid } from '@/lib/utils';
 import { createDataAdapter, type DataAdapter, type DataEvent } from '@/lib/data';
 import { buildLeagueEntities, buildSeedDatabase } from '@/data/seed';
 import type { RawLeague } from '@/data/rosters';
@@ -47,6 +47,7 @@ interface CommitOpts {
   toast?: { kind: Toast['kind']; message: string };
   broadcast?: boolean;
   audit?: { leagueId: string; action: string; entity: string; entityId: string; before?: unknown; after?: unknown };
+  system?: boolean;
 }
 
 interface StoreState {
@@ -57,11 +58,17 @@ interface StoreState {
   saving: boolean;
   error: string | null;
   mode: 'mock' | 'supabase';
-  currentUserId: string;
+  currentGuestId: string;
+  onlineGuests: Record<string, GuestSession[]>;
   toasts: Toast[];
 
   init: () => void;
   refresh: () => void;
+  createGuest: (displayName: string) => string;
+  updateGuest: (displayName: string) => void;
+  resetGuest: () => Promise<void>;
+  joinLeagueByRoomCode: (roomCode: string, recoveryCode?: string) => Promise<string | null>;
+  startPresence: (leagueId: string) => () => void;
   reseed: () => void;
   hardReset: () => void;
 
@@ -70,7 +77,7 @@ interface StoreState {
   dismissToast: (id: string) => void;
 
   // leagues
-  createLeague: (input: Partial<League> & { name: string; format: LeagueFormat; region: string; tier: League['tier']; season: string }) => string;
+  createLeague: (input: Partial<League> & { name: string; format: LeagueFormat; region: string; tier: League['tier']; season: string; adminCode?: string }) => string;
   importRawLeague: (raw: RawLeague, opts?: { presimulate?: boolean }) => string;
   importLeagueBundle: (json: string) => string | null;
   cloneLeague: (leagueId: string) => string | null;
@@ -125,8 +132,8 @@ interface StoreState {
   setTradeStatus: (tradeId: string, status: TradeStatus) => void;
 
   // admins
-  setLeagueAdmin: (leagueId: string, userId: string, role: AdminRole, teamId?: string | null) => void;
-  removeLeagueAdmin: (leagueId: string, userId: string) => void;
+  setLeagueAdmin: (leagueId: string, guestId: string, role: AdminRole, teamId?: string | null) => void;
+  removeLeagueAdmin: (leagueId: string, guestId: string) => void;
 
   // bulk csv import
   importCsv: (leagueId: string, type: 'players' | 'coaches' | 'teams' | 'matches', text: string) => { ok: number; failed: number };
@@ -135,8 +142,6 @@ interface StoreState {
   addImportJob: (job: Omit<ImportJob, 'id' | 'created_at'>) => string;
   updateImportJob: (id: string, patch: Partial<ImportJob>) => void;
 
-  // profile
-  updateProfile: (patch: { username?: string; avatar_url?: string | null }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,8 +170,8 @@ export const useStore = create<StoreState>((set, get) => {
     set({ loading: true, error: null });
     void adapter
       .loadDatabase()
-      .then(({ db, currentUserId }) => {
-        set({ db, currentUserId, ready: true, loading: false, rev: get().rev + 1 });
+      .then(({ db, currentGuestId }) => {
+        set({ db, currentGuestId, ready: true, loading: false, rev: get().rev + 1 });
       })
       .catch((error) => {
         set({ db: structuredClone(EMPTY_DB), ready: true, loading: false });
@@ -174,20 +179,20 @@ export const useStore = create<StoreState>((set, get) => {
       });
   }
 
-  function persistChange(previous: Database, next: Database, event?: DataEvent): void {
+  function persistChange(previous: Database, next: Database, event?: DataEvent, system = false): void {
     if (!adapter) return;
     const epoch = syncEpoch;
     pendingWrites++;
     set({ saving: true, error: null });
     writeQueue = writeQueue
       .catch(() => undefined)
-      .then(() => (epoch === syncEpoch ? adapter!.saveDatabase(previous, next, event) : undefined))
+      .then(() => (epoch === syncEpoch ? adapter!.saveDatabase(previous, next, event, { system }) : undefined))
       .catch(async (error) => {
         syncEpoch++;
         reportError(error);
-        if (adapter?.mode === 'supabase') {
+        if (adapter) {
           const snapshot = await adapter.loadDatabase();
-          set({ db: snapshot.db, currentUserId: snapshot.currentUserId, rev: get().rev + 1 });
+          set({ db: snapshot.db, currentGuestId: snapshot.currentGuestId, rev: get().rev + 1 });
         }
       })
       .catch(reportError)
@@ -206,7 +211,7 @@ export const useStore = create<StoreState>((set, get) => {
       db.audit_logs.push({
         id: uid('al'),
         league_id: opts.audit.leagueId,
-        actor_user_id: get().currentUserId,
+        actor_guest_id: get().currentGuestId,
         action_type: opts.audit.action,
         entity_type: opts.audit.entity,
         entity_id: opts.audit.entityId,
@@ -223,7 +228,7 @@ export const useStore = create<StoreState>((set, get) => {
     }
     const next = structuredClone(db);
     set({ db: next, rev: get().rev + 1 });
-    persistChange(previous, next, opts.broadcast === false ? undefined : opts.toast);
+    persistChange(previous, next, opts.broadcast === false ? undefined : opts.toast, opts.system);
   }
 
   // helpers operating on the live db -----------------------------------------
@@ -310,7 +315,8 @@ export const useStore = create<StoreState>((set, get) => {
     saving: false,
     error: null,
     mode: 'mock',
-    currentUserId: DEMO_USER_ID,
+    currentGuestId: '',
+    onlineGuests: {},
     toasts: [],
 
     init() {
@@ -319,8 +325,8 @@ export const useStore = create<StoreState>((set, get) => {
       set({ mode: adapter.mode });
       unsubscribeAdapter?.();
       unsubscribeAdapter = adapter.subscribe(
-        ({ db, currentUserId }, event) => {
-          set({ db, currentUserId, error: null, rev: get().rev + 1 });
+        ({ db, currentGuestId }, event) => {
+          set({ db, currentGuestId, error: null, rev: get().rev + 1 });
           if (event) addToast(event);
         },
         reportError,
@@ -332,13 +338,94 @@ export const useStore = create<StoreState>((set, get) => {
       loadFromAdapter();
     },
 
+    createGuest(displayName) {
+      const name = displayName.trim().slice(0, 32);
+      if (name.length < 2) {
+        reportError(new Error('Nickname must be at least 2 characters.'));
+        return '';
+      }
+      const id = uid('guest');
+      const ts = nowISO();
+      const guest: GuestSession = { id, display_name: name, avatar_color: avatarColor(id), created_at: ts, last_seen_at: ts };
+      adapter?.setGuestId(id);
+      set({ currentGuestId: id });
+      commit(() => get().db.guest_sessions.push(guest), { toast: { kind: 'success', message: `Welcome, ${name}` }, broadcast: false });
+      return id;
+    },
+
+    updateGuest(displayName) {
+      const name = displayName.trim().slice(0, 32);
+      if (name.length < 2) {
+        reportError(new Error('Nickname must be at least 2 characters.'));
+        return;
+      }
+      commit(() => {
+        const guest = get().db.guest_sessions.find((item) => item.id === get().currentGuestId);
+        if (guest) Object.assign(guest, { display_name: name, last_seen_at: nowISO() });
+      }, { toast: { kind: 'success', message: 'Nickname updated' } });
+    },
+
+    async resetGuest() {
+      try {
+        await adapter?.resetGuestIdentity();
+        set({ currentGuestId: '', onlineGuests: {}, rev: get().rev + 1 });
+      } catch (error) {
+        reportError(error);
+      }
+    },
+
+    async joinLeagueByRoomCode(roomCode, recoveryCode) {
+      const code = roomCode.trim().toUpperCase();
+      const guestId = get().currentGuestId;
+      if (!guestId) {
+        reportError(new Error('Choose a nickname before joining a room.'));
+        return null;
+      }
+      const league = get().db.leagues.find((item) => item.room_code === code);
+      if (!league) {
+        reportError(new Error('Room code not found.'));
+        return null;
+      }
+      try {
+        if (recoveryCode?.trim()) {
+          const leagueId = await adapter!.recoverAdmin(code, recoveryCode.trim(), guestId);
+          const snapshot = await adapter!.loadDatabase();
+          set({ db: snapshot.db, currentGuestId: snapshot.currentGuestId, rev: get().rev + 1 });
+          addToast({ kind: 'success', message: 'Admin access recovered' });
+          return leagueId;
+        }
+        if (!get().db.league_members.some((member) => member.league_id === league.id && member.guest_id === guestId)) {
+          commit(() => get().db.league_members.push({ id: uid('member'), league_id: league.id, guest_id: guestId, role: 'viewer', joined_at: nowISO() }), {
+            toast: { kind: 'success', message: `Joined ${league.name}` },
+          });
+        }
+        return league.id;
+      } catch (error) {
+        reportError(error);
+        return null;
+      }
+    },
+
+    startPresence(leagueId) {
+      const guest = get().db.guest_sessions.find((item) => item.id === get().currentGuestId);
+      if (!adapter || !guest) return () => undefined;
+      return adapter.trackPresence(
+        leagueId,
+        guest,
+        (guests) => set({ onlineGuests: { ...get().onlineGuests, [leagueId]: guests } }),
+        reportError,
+      );
+    },
+
     reseed() {
       if (adapter?.mode === 'supabase') {
         reportError(new Error('Demo reseeding is only available in mock mode.'));
         return;
       }
       const db = buildSeedDatabase();
-      commit(() => set({ db }), { toast: { kind: 'success', message: 'Demo data reloaded' } });
+      const guest = get().db.guest_sessions.find((item) => item.id === get().currentGuestId);
+      if (guest) db.guest_sessions.push(guest);
+      commit(() => set({ db }), { toast: { kind: 'success', message: 'Demo data reloaded' }, system: true });
     },
 
     hardReset() {
@@ -347,7 +434,9 @@ export const useStore = create<StoreState>((set, get) => {
         return;
       }
       const db = buildSeedDatabase();
-      commit(() => set({ db }), { toast: { kind: 'success', message: 'Local data reset' } });
+      const guest = get().db.guest_sessions.find((item) => item.id === get().currentGuestId);
+      if (guest) db.guest_sessions.push(guest);
+      commit(() => set({ db }), { toast: { kind: 'success', message: 'Local data reset' }, system: true });
     },
 
     pushToast(t) {
@@ -362,6 +451,8 @@ export const useStore = create<StoreState>((set, get) => {
     createLeague(input) {
       const id = uid('lg');
       const ts = nowISO();
+      let roomCode = input.room_code?.trim().toUpperCase() || createRoomCode();
+      while (get().db.leagues.some((item) => item.room_code === roomCode)) roomCode = createRoomCode();
       const league: League = {
         id,
         name: input.name,
@@ -374,7 +465,9 @@ export const useStore = create<StoreState>((set, get) => {
         source_name: input.source_name ?? 'Manual',
         source_url: input.source_url ?? null,
         format: input.format,
-        owner_user_id: get().currentUserId,
+        owner_guest_id: get().currentGuestId,
+        room_code: roomCode,
+        admin_code_hash: input.adminCode?.trim() ? `plain:${input.adminCode.trim()}` : null,
         is_seed: false,
         last_imported_at: null,
         created_at: ts,
@@ -384,7 +477,8 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           db.leagues.push(league);
-          db.league_admins.push({ id: uid('la'), league_id: id, user_id: get().currentUserId, role: 'owner', team_id: null });
+          db.league_admins.push({ id: uid('la'), league_id: id, guest_id: get().currentGuestId, role: 'owner', team_id: null });
+          db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: ts });
         },
         { toast: { kind: 'success', message: `Created league "${league.name}"` }, audit: { leagueId: id, action: 'create', entity: 'league', entityId: id, after: league } },
       );
@@ -392,13 +486,14 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     importRawLeague(raw, opts) {
-      const slices = buildLeagueEntities(raw, { ownerId: get().currentUserId, presimulate: opts?.presimulate });
+      const slices = buildLeagueEntities(raw, { ownerId: get().currentGuestId, presimulate: opts?.presimulate });
       const id = slices.leagues[0].id;
       commit(
         () => {
           const db = get().db;
           db.leagues.push(...slices.leagues);
           db.league_admins.push(...slices.league_admins);
+          db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: nowISO() });
           db.teams.push(...slices.teams);
           db.players.push(...slices.players);
           db.coaches.push(...slices.coaches);
@@ -422,13 +517,14 @@ export const useStore = create<StoreState>((set, get) => {
         get().pushToast({ kind: 'error', message: 'Not a Rift League export bundle' });
         return null;
       }
-      const slices = reidLeagueExport(parsed, { ownerId: get().currentUserId });
+      const slices = reidLeagueExport(parsed, { ownerId: get().currentGuestId });
       const id = slices.leagues[0].id;
       commit(
         () => {
           const db = get().db;
           db.leagues.push(...slices.leagues);
           db.league_admins.push(...slices.league_admins);
+          db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: nowISO() });
           db.teams.push(...slices.teams);
           db.players.push(...slices.players);
           db.coaches.push(...slices.coaches);
@@ -447,7 +543,7 @@ export const useStore = create<StoreState>((set, get) => {
       const bundle = buildLeagueExport(get().db, leagueId);
       if (!bundle) return null;
       const slices = reidLeagueExport(bundle, {
-        ownerId: get().currentUserId,
+        ownerId: get().currentGuestId,
         name: `${bundle.league.name} (Copy)`,
         slug: `${bundle.league.slug}-copy-${Math.random().toString(36).slice(2, 6)}`,
       });
@@ -457,6 +553,7 @@ export const useStore = create<StoreState>((set, get) => {
           const db = get().db;
           db.leagues.push(...slices.leagues);
           db.league_admins.push(...slices.league_admins);
+          db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: nowISO() });
           db.teams.push(...slices.teams);
           db.players.push(...slices.players);
           db.coaches.push(...slices.coaches);
@@ -490,6 +587,7 @@ export const useStore = create<StoreState>((set, get) => {
           const tradeIds = new Set(db.trades.filter((t) => t.league_id === id).map((t) => t.id));
           db.leagues = db.leagues.filter((l) => l.id !== id);
           db.league_admins = db.league_admins.filter((a) => a.league_id !== id);
+          db.league_members = db.league_members.filter((member) => member.league_id !== id);
           db.teams = db.teams.filter((t) => t.league_id !== id);
           db.players = db.players.filter((p) => p.league_id !== id);
           db.coaches = db.coaches.filter((c) => c.league_id !== id);
@@ -903,8 +1001,8 @@ export const useStore = create<StoreState>((set, get) => {
             money_from_team: input.moneyFromTeam,
             money_to_team: input.moneyToTeam,
             status: 'pending',
-            proposed_by_user_id: get().currentUserId,
-            reviewed_by_user_id: null,
+            proposed_by_guest_id: get().currentGuestId,
+            reviewed_by_guest_id: null,
             created_at: ts,
             reviewed_at: null,
           });
@@ -942,7 +1040,7 @@ export const useStore = create<StoreState>((set, get) => {
             if (toTeam) toTeam.budget += trade.money_from_team - trade.money_to_team;
             trade.status = 'accepted';
             trade.reviewed_at = nowISO();
-            trade.reviewed_by_user_id = get().currentUserId;
+            trade.reviewed_by_guest_id = get().currentGuestId;
           },
           { toast: { kind: 'trade', message: 'Trade accepted' } },
         );
@@ -950,22 +1048,29 @@ export const useStore = create<StoreState>((set, get) => {
         commit(() => {
           trade.status = status;
           trade.reviewed_at = nowISO();
-          trade.reviewed_by_user_id = get().currentUserId;
+          trade.reviewed_by_guest_id = get().currentGuestId;
         }, { toast: { kind: 'trade', message: `Trade ${status}` } });
       }
     },
 
     // -- admins ---------------------------------------------------------------
-    setLeagueAdmin(leagueId, userId, role, teamId = null) {
+    setLeagueAdmin(leagueId, guestId, role, teamId = null) {
       commit(() => {
         const db = get().db;
-        const existing = db.league_admins.find((a) => a.league_id === leagueId && a.user_id === userId);
+        const existing = db.league_admins.find((a) => a.league_id === leagueId && a.guest_id === guestId);
         if (existing) { existing.role = role; existing.team_id = teamId; }
-        else db.league_admins.push({ id: uid('la'), league_id: leagueId, user_id: userId, role, team_id: teamId });
+        else db.league_admins.push({ id: uid('la'), league_id: leagueId, guest_id: guestId, role, team_id: teamId });
+        const member = db.league_members.find((item) => item.league_id === leagueId && item.guest_id === guestId);
+        if (member) member.role = role;
+        else db.league_members.push({ id: uid('member'), league_id: leagueId, guest_id: guestId, role, joined_at: nowISO() });
       }, { toast: { kind: 'info', message: `Set ${role} role` } });
     },
-    removeLeagueAdmin(leagueId, userId) {
-      commit(() => { get().db.league_admins = get().db.league_admins.filter((a) => !(a.league_id === leagueId && a.user_id === userId)); });
+    removeLeagueAdmin(leagueId, guestId) {
+      commit(() => {
+        get().db.league_admins = get().db.league_admins.filter((a) => !(a.league_id === leagueId && a.guest_id === guestId));
+        const member = get().db.league_members.find((item) => item.league_id === leagueId && item.guest_id === guestId);
+        if (member) member.role = 'viewer';
+      });
     },
 
     // -- CSV import -----------------------------------------------------------
@@ -1055,13 +1160,6 @@ export const useStore = create<StoreState>((set, get) => {
       });
     },
 
-    // -- profile --------------------------------------------------------------
-    updateProfile(patch) {
-      commit(() => {
-        const p = get().db.profiles.find((x) => x.id === get().currentUserId);
-        if (p) Object.assign(p, patch);
-      }, { toast: { kind: 'success', message: 'Profile updated' } });
-    },
   };
 });
 

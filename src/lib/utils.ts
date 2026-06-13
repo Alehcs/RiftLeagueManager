@@ -19,6 +19,27 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
+const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+export function createRoomCode(length = 6): string {
+  let code = '';
+  for (let index = 0; index < length; index++) {
+    code += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+  }
+  return code;
+}
+
+export function avatarColor(seed: string): string {
+  const colors = ['#26d0ce', '#8b5cf6', '#3b82f6', '#22c55e', '#c8a85a', '#ef4444', '#ec4899', '#f97316'];
+  let hash = 0;
+  for (let index = 0; index < seed.length; index++) hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  return colors[hash % colors.length];
+}
+
+export function guestInitials(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
+}
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()

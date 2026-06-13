@@ -65,7 +65,8 @@ npm run typecheck  # tsc --noEmit
 - JSON league bundles + Teams/Players/Coaches/Matches CSV import & export.
 - Adapter-backed CRUD for leagues, teams, players, coaches, matches, games, trades, transfer history, imports and audit logs.
 - Mock realtime across browser tabs with `BroadcastChannel`; Supabase Realtime for matches, standings, rosters, trades and audit logs.
-- Auth-aware owner/admin checks in both the client adapter and Postgres RLS policies.
+- Guest nickname sessions with persistent browser identity, room membership, invite links and realtime presence.
+- Guest-aware owner/admin/manager checks in both the client adapter and Postgres RLS policies.
 
 **Known data limitations:**
 
@@ -80,6 +81,7 @@ npm run typecheck  # tsc --noEmit
 | --- | --- |
 | `/` | Landing page with featured leagues |
 | `/dashboard` | All leagues grouped by tier |
+| `/join/[roomCode]` | Join a shared league room as the current guest |
 | `/leagues/new` | Create wizard (manual · clone · import JSON) |
 | `/leagues/import` | Import a real LoL esports league (source → select → preview → import) |
 | `/leagues/[id]` | League overview |
@@ -130,8 +132,8 @@ src/
 
 ### Data layer (mock vs Supabase)
 
-- **Mock mode (default):** `mockAdapter` loads and saves the full `Database` shape in `localStorage` and uses `BroadcastChannel` for cross-tab updates.
-- **Supabase mode:** `supabaseAdapter` loads Postgres rows, applies diff-based CRUD mutations, creates an anonymous session when enabled, and refreshes state from Supabase Realtime. Set `NEXT_PUBLIC_FORCE_MOCK=true` to keep local mode even when Supabase variables exist.
+- **Mock mode (default):** `mockAdapter` loads and saves the full `Database` shape and guest ID in `localStorage`, and uses `BroadcastChannel` for data updates and room presence.
+- **Supabase mode:** `supabaseAdapter` keeps the visible identity in `guest_sessions`, uses invisible anonymous auth only to bind RLS permissions, applies diff-based CRUD mutations, and refreshes data and presence through Supabase Realtime. Set `NEXT_PUBLIC_FORCE_MOCK=true` to keep local mode even when Supabase variables exist.
 
 > The mock store and the Postgres schema share the exact same shape, so moving from one to the other is a mechanical swap rather than a rewrite.
 
@@ -179,7 +181,7 @@ stage,week,match_day,date_time,blue_team_short_name,red_team_short_name,format,s
 ## 🔌 Optional: connecting Supabase
 
 1. Create a Supabase project.
-2. Enable **Anonymous Sign-Ins** under Authentication → Providers. Existing authenticated sessions also work.
+2. Enable **Anonymous Sign-Ins** under Authentication → Providers. No email/password UI is required.
 3. Run `supabase/migrations/0001_init.sql` with `supabase db push` or the SQL editor.
 4. Copy `.env.example` → `.env.local` and fill in:
    ```
@@ -189,20 +191,20 @@ stage,week,match_day,date_time,blue_team_short_name,red_team_short_name,format,s
    ```
 5. Restart `npm run dev`. The navbar badge switches from **MOCK MODE** to **SUPABASE**.
 
-Reads are public. Writes require an authenticated user who owns the league or has an `owner`/`admin` row in `league_admins`. New anonymous users can create leagues but cannot edit leagues owned by other users.
+Reads are public. The app creates an invisible anonymous auth session, then binds it to the browser's guest ID. League writes require an `owner`, `admin`, or `manager` guest role; league settings and role management remain owner/admin-only.
 
 ---
 
 ## 🎮 Main flow
 
-1. Open the app → browse featured leagues (seeded with real structure).
-2. **Import** a real league or **create** one from scratch.
+1. Open the app and choose a temporary nickname. The guest ID persists in the browser.
+2. **Import**, **create**, or **join** a league using its room code or invite link.
 3. Review imported teams, rosters & coaches; **edit** anything that's off.
 4. **Generate or regenerate** the schedule.
 5. **Simulate** a match, a week, the regular season or the full tournament.
 6. Standings update automatically; **generate playoffs** and crown a champion.
 7. Manage rosters — **sign / release / sell**, propose **trades** with cash.
-8. Watch every change appear **live in another tab** with toast notifications.
+8. Share the invite link and watch data and active-room users update in realtime.
 
 ---
 
@@ -220,7 +222,9 @@ Reads are public. Writes require an authenticated user who owns the league or ha
 
 - Mock data lives in your browser. **Profile → Wipe & reseed** resets it; **Reset demo** on the dashboard reloads the seeded leagues.
 - Supabase multi-entity operations are serialized but are not yet wrapped in a single Postgres transaction.
-- Authentication uses an existing session or anonymous sign-in; there is no account login UI yet.
+- Guest recovery codes are optional. Supabase stores a hash; mock mode keeps the code only in local browser data.
+- Guest identity is browser-local. Clearing site data loses that identity unless the league has a recovery code.
+- There is no email/password account or cross-device guest sync yet.
 - Double elimination is generated for 4- and 8-team fields (used by MSI); other sizes fall back to single elimination.
 - Swiss pairing is a simplified records-based implementation.
 - Team logos / player images default to generated initials tiles; paste real public image URLs in **Admin → Assets** (or per entity) to replace them.

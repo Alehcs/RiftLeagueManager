@@ -27,7 +27,7 @@ export default function NewLeaguePage() {
   const [mode, setMode] = useState<Mode>('manual');
 
   // manual state
-  const [form, setForm] = useState({ name: '', region: 'Custom', tier: 'custom' as LeagueTier, season: '2025', format: 'double_round_robin_bo1' as LeagueFormat });
+  const [form, setForm] = useState({ name: '', region: 'Custom', tier: 'custom' as LeagueTier, season: '2025', format: 'double_round_robin_bo1' as LeagueFormat, adminCode: '' });
   const [teamLines, setTeamLines] = useState('');
   const [genSchedule, setGenSchedule] = useState(true);
 
@@ -112,6 +112,9 @@ export default function NewLeaguePage() {
               </Field>
             </div>
             <p className="text-xs text-slate-600">{FORMAT_META[form.format].description}</p>
+            <Field label="Admin recovery code" hint="Optional. Use it to recover admin access from another guest session.">
+              <Input type="password" autoComplete="new-password" value={form.adminCode} onChange={(e) => setF({ adminCode: e.target.value })} placeholder="Optional recovery code" />
+            </Field>
             <Field label="Teams (one per line, optional)" hint="You can also add teams later from the admin panel.">
               <Textarea rows={5} value={teamLines} onChange={(e) => setTeamLines(e.target.value)} placeholder={'Team Alpha\nTeam Bravo\nTeam Charlie\nTeam Delta'} />
             </Field>

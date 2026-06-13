@@ -62,6 +62,14 @@ export interface Profile {
   created_at: string;
 }
 
+export interface GuestSession {
+  id: string;
+  display_name: string;
+  avatar_color: string;
+  created_at: string;
+  last_seen_at: string;
+}
+
 export interface League {
   id: string;
   name: string;
@@ -74,7 +82,10 @@ export interface League {
   source_name: string | null;
   source_url: string | null;
   format: LeagueFormat;
-  owner_user_id: string;
+  owner_guest_id: string;
+  room_code: string;
+  admin_code_hash: string | null;
+  owner_user_id?: string | null;
   // demo / generated flag
   is_seed?: boolean;
   last_imported_at?: string | null;
@@ -85,9 +96,18 @@ export interface League {
 export interface LeagueAdmin {
   id: string;
   league_id: string;
-  user_id: string;
+  guest_id: string;
+  user_id?: string | null;
   role: AdminRole;
   team_id: string | null;
+}
+
+export interface LeagueMember {
+  id: string;
+  league_id: string;
+  guest_id: string;
+  role: AdminRole;
+  joined_at: string;
 }
 
 export interface Team {
@@ -221,8 +241,10 @@ export interface Trade {
   money_from_team: number;
   money_to_team: number;
   status: TradeStatus;
-  proposed_by_user_id: string;
-  reviewed_by_user_id: string | null;
+  proposed_by_guest_id: string;
+  reviewed_by_guest_id: string | null;
+  proposed_by_user_id?: string | null;
+  reviewed_by_user_id?: string | null;
   created_at: string;
   reviewed_at: string | null;
 }
@@ -269,7 +291,8 @@ export interface ImportJob {
 export interface AuditLog {
   id: string;
   league_id: string;
-  actor_user_id: string;
+  actor_guest_id: string;
+  actor_user_id?: string | null;
   action_type: string;
   entity_type: string;
   entity_id: string;
@@ -283,8 +306,10 @@ export interface AuditLog {
 // ---------------------------------------------------------------------------
 export interface Database {
   profiles: Profile[];
+  guest_sessions: GuestSession[];
   leagues: League[];
   league_admins: LeagueAdmin[];
+  league_members: LeagueMember[];
   teams: Team[];
   players: Player[];
   coaches: Coach[];
@@ -300,8 +325,10 @@ export interface Database {
 
 export const EMPTY_DB: Database = {
   profiles: [],
+  guest_sessions: [],
   leagues: [],
   league_admins: [],
+  league_members: [],
   teams: [],
   players: [],
   coaches: [],

@@ -1,14 +1,17 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink, ChevronLeft } from 'lucide-react';
-import { useDb, useReady } from '@/lib/store/hooks';
+import { ExternalLink, ChevronLeft, Copy, Check, Users } from 'lucide-react';
+import { useCurrentGuest, useDb, useReady } from '@/lib/store/hooks';
+import { useStore } from '@/lib/store/store';
 import { leagueByIdOrSlug } from '@/lib/store/selectors';
 import { LeagueSubnav } from '@/components/league/LeagueSubnav';
 import { TeamLogo } from '@/components/ui/image';
 import { TierBadge, RegionBadge, FormatBadge } from '@/components/common/badges';
 import { PageContainer } from '@/components/common/layout';
-import { Spinner } from '@/components/ui/primitives';
+import { Badge, Button, Spinner } from '@/components/ui/primitives';
+import { guestInitials } from '@/lib/utils';
 
 export default function LeagueLayout({
   children,
@@ -19,7 +22,18 @@ export default function LeagueLayout({
 }) {
   const ready = useReady();
   const db = useDb();
+  const currentGuest = useCurrentGuest();
   const league = leagueByIdOrSlug(db, params.leagueId);
+  const leagueId = league?.id;
+  const startPresence = useStore((state) => state.startPresence);
+  const presentGuests = useStore((state) => leagueId ? state.onlineGuests[leagueId] : undefined);
+  const onlineGuests = presentGuests ?? [];
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!leagueId) return;
+    return startPresence(leagueId);
+  }, [currentGuest?.avatar_color, currentGuest?.display_name, currentGuest?.id, leagueId, startPresence]);
 
   if (!ready) {
     return (
@@ -77,6 +91,34 @@ export default function LeagueLayout({
                 <ExternalLink size={12} /> External
               </a>
             )}
+          </div>
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex items-center gap-2">
+            <a href={`/join/${league.room_code}`} target="_blank" rel="noreferrer" title="Open invite link">
+              <Badge color="#26d0ce">Room {league.room_code}</Badge>
+            </a>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await navigator.clipboard.writeText(`${window.location.origin}/join/${league.room_code}`);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1600);
+              }}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Invite'}
+            </Button>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-500" title={onlineGuests.map((guest) => guest.display_name).join(', ')}>
+            <Users size={13} /> {onlineGuests.length} {onlineGuests.length === 1 ? 'user' : 'users'} online
+            <div className="ml-1 flex -space-x-1.5">
+              {onlineGuests.slice(0, 4).map((guest) => (
+                <span key={guest.id} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-bg text-[9px] font-bold text-white" style={{ backgroundColor: guest.avatar_color }}>
+                  {guestInitials(guest.display_name)}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>

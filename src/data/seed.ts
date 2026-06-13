@@ -11,7 +11,7 @@ import type {
 import { PLAYER_ROLES, EMPTY_DB } from '@/lib/types';
 import { DEMO_USER_ID } from '@/lib/constants';
 import { Rng } from '@/lib/rng';
-import { nowISO, uid } from '@/lib/utils';
+import { createRoomCode, nowISO, uid } from '@/lib/utils';
 import {
   COACH_NICK_POOL,
   NICK_POOL,
@@ -298,7 +298,9 @@ function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; is
     source_name: raw.source_name ?? null,
     source_url: raw.source_url ?? null,
     format: raw.format,
-    owner_user_id: ownerId,
+    owner_guest_id: ownerId,
+    room_code: createRoomCode(),
+    admin_code_hash: null,
     is_seed: opts?.isSeed ?? true,
     last_imported_at: ts,
     created_at: ts,
@@ -308,7 +310,7 @@ function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; is
   db.league_admins.push({
     id: uid('la'),
     league_id: league.id,
-    user_id: ownerId,
+    guest_id: ownerId,
     role: 'owner',
     team_id: null,
   });
