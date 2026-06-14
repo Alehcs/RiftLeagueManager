@@ -371,6 +371,10 @@ drop policy if exists "league admins write" on league_admins;
 drop policy if exists "league members self join" on league_members;
 drop policy if exists "league members self leave" on league_members;
 drop policy if exists "league members admin write" on league_members;
+drop policy if exists "league members self insert" on league_members;
+drop policy if exists "league members self update" on league_members;
+drop policy if exists "league members self delete" on league_members;
+drop policy if exists "league members admin manage" on league_members;
 drop policy if exists "teams write" on teams;
 drop policy if exists "players write" on players;
 drop policy if exists "coaches write" on coaches;
@@ -407,11 +411,22 @@ create policy "league admins write" on league_admins for all to authenticated
   with check (public.has_league_role(league_id, array['owner','admin']));
 
 create policy "public read" on league_members for select using (true);
-create policy "league members self join" on league_members for insert to authenticated
+-- A guest may add THEMSELVES as a viewer when joining a room.
+create policy "league members self insert" on league_members for insert to authenticated
   with check (guest_id = public.current_guest_id() and role = 'viewer');
-create policy "league members self leave" on league_members for delete to authenticated
-  using (guest_id = public.current_guest_id() and role = 'viewer');
-create policy "league members admin write" on league_members for all to authenticated
+-- A guest may update/keep THEIR OWN row (the client upserts, so a re-sent row
+-- takes the UPDATE arm) but cannot escalate past viewer this way.
+create policy "league members self update" on league_members for update to authenticated
+  using (guest_id = public.current_guest_id())
+  with check (guest_id = public.current_guest_id() and role = 'viewer');
+-- A guest may remove their own membership.
+create policy "league members self delete" on league_members for delete to authenticated
+  using (guest_id = public.current_guest_id());
+-- Owners/admins (the creator owns the league row, written first) manage any
+-- member: insert/update/delete with any role. Self-escalation is impossible
+-- because a non-admin satisfies neither this policy nor the viewer-only self
+-- policy; admin is granted only via the owner-creation path or the recovery RPC.
+create policy "league members admin manage" on league_members for all to authenticated
   using (public.has_league_role(league_id, array['owner','admin']))
   with check (public.has_league_role(league_id, array['owner','admin']));
 
