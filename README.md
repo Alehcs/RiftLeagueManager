@@ -180,6 +180,8 @@ stage,week,match_day,date_time,blue_team_short_name,red_team_short_name,format,s
 
 ## 🔌 Optional: connecting Supabase
 
+> **Verified:** the live Supabase flow has been manually tested end-to-end — guest nickname creation & persistence, league creation, invite/join by room code, `league_members` permissions, and durable Supabase writes all work with the steps below.
+
 1. Create a Supabase project.
 2. Enable **Anonymous Sign-Ins** under Authentication → Providers. No email/password UI is required.
 3. Run `supabase/migrations/0001_init.sql` with `supabase db push` or the SQL editor.
