@@ -115,7 +115,9 @@ export class SupabaseAdapter implements DataAdapter {
       }
       for (const table of UPSERT_ORDER) {
         const rows = changedRows(previous[table] as Row[], next[table] as Row[]);
-        await this.upsertRows(table, rows);
+        const existingIds = new Set((previous[table] as Row[]).map((row) => row.id));
+        await this.insertRows(table, rows.filter((row) => !existingIds.has(row.id)));
+        await this.updateRows(table, rows.filter((row) => existingIds.has(row.id)));
       }
     } finally {
       this.activeWrites--;
@@ -283,11 +285,20 @@ export class SupabaseAdapter implements DataAdapter {
     }
   }
 
-  private async upsertRows(table: TableName, rows: Row[]): Promise<void> {
+  private async insertRows(table: TableName, rows: Row[]): Promise<void> {
     for (const batch of chunks(rows, 200)) {
       const payload = await Promise.all(batch.map((row) => this.toSupabaseRow(table, row)));
-      const { error } = await this.client.from(table).upsert(payload, { onConflict: 'id' });
-      if (error) throw new Error(dbError('save', table, error.message));
+      const { error } = await this.client.from(table).insert(payload);
+      if (error) throw new Error(dbError('insert', table, error.message));
+    }
+  }
+
+  private async updateRows(table: TableName, rows: Row[]): Promise<void> {
+    for (const row of rows) {
+      const payload = await this.toSupabaseRow(table, row);
+      delete payload.id;
+      const { error } = await this.client.from(table).update(payload).eq('id', row.id);
+      if (error) throw new Error(dbError('update', table, error.message));
     }
   }
 
