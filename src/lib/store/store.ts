@@ -19,6 +19,7 @@ import type {
 import { EMPTY_DB } from '@/lib/types';
 import { avatarColor, createRoomCode, nowISO, uid } from '@/lib/utils';
 import { createDataAdapter, type DataAdapter, type DataEvent } from '@/lib/data';
+import { getSupabaseDiagnostics, type SupabaseDiagnostics, type SupabaseStatus } from '@/lib/supabase/client';
 import { buildLeagueEntities, buildSeedDatabase } from '@/data/seed';
 import type { RawLeague } from '@/data/rosters';
 import { computeTeamStrength } from '@/services/strength';
@@ -58,6 +59,8 @@ interface StoreState {
   saving: boolean;
   error: string | null;
   mode: 'mock' | 'supabase';
+  supabaseStatus: SupabaseStatus;
+  supabaseDiagnostics: SupabaseDiagnostics;
   currentGuestId: string;
   onlineGuests: Record<string, GuestSession[]>;
   toasts: Toast[];
@@ -315,14 +318,17 @@ export const useStore = create<StoreState>((set, get) => {
     saving: false,
     error: null,
     mode: 'mock',
+    supabaseStatus: 'mock',
+    supabaseDiagnostics: getSupabaseDiagnostics(),
     currentGuestId: '',
     onlineGuests: {},
     toasts: [],
 
     init() {
       if (adapter || get().loading || get().ready) return;
+      const diagnostics = getSupabaseDiagnostics();
       adapter = createDataAdapter();
-      set({ mode: adapter.mode });
+      set({ mode: adapter.mode, supabaseStatus: diagnostics.status, supabaseDiagnostics: diagnostics });
       unsubscribeAdapter?.();
       unsubscribeAdapter = adapter.subscribe(
         ({ db, currentGuestId }, event) => {

@@ -30,6 +30,13 @@ export function useMode(): 'mock' | 'supabase' {
   return useStore((s) => s.mode);
 }
 
+export function useSupabaseStatus() {
+  const status = useStore((s) => s.supabaseStatus);
+  const diagnostics = useStore((s) => s.supabaseDiagnostics);
+  const error = useStore((s) => s.error);
+  return { status, diagnostics, error };
+}
+
 export function useCurrentGuestId(): string {
   return useStore((s) => s.currentGuestId);
 }

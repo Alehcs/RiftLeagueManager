@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { LayoutDashboard, Trophy, DownloadCloud, User, Menu, X, Swords, Database } from 'lucide-react';
+import { LayoutDashboard, Trophy, DownloadCloud, User, Menu, X, Swords, Database, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useDataStatus, useMode } from '@/lib/store/hooks';
+import { useDataStatus, useSupabaseStatus } from '@/lib/store/hooks';
+import type { SupabaseDiagnostics, SupabaseStatus } from '@/lib/supabase/client';
 
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -17,9 +18,11 @@ const LINKS = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const mode = useMode();
+  const { status, diagnostics, error } = useSupabaseStatus();
   const { saving } = useDataStatus();
   const [open, setOpen] = useState(false);
+
+  const badge = buildBadge(status, diagnostics, error, saving);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-md">
@@ -54,13 +57,11 @@ export function Navbar() {
 
         <div className="flex items-center gap-2">
           <span
-            className={cn(
-              'hidden rounded-md px-2 py-1 text-[10px] font-semibold sm:inline',
-              mode === 'mock' ? 'bg-rift-gold/15 text-rift-gold' : 'bg-rift-green/15 text-rift-green',
-            )}
-            title={mode === 'mock' ? 'Local mock mode — data persists in your browser & syncs across tabs' : saving ? 'Saving to Supabase' : 'Connected to Supabase'}
+            className={cn('hidden items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold sm:inline-flex', badge.className)}
+            title={badge.title}
           >
-            {mode === 'mock' ? 'MOCK MODE' : saving ? 'SYNCING' : 'SUPABASE'}
+            {badge.warn && <AlertTriangle size={11} />}
+            {badge.label}
           </span>
           <button className="md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Menu">
             {open ? <X size={20} /> : <Menu size={20} />}
@@ -85,4 +86,36 @@ export function Navbar() {
       )}
     </header>
   );
+}
+
+function buildBadge(
+  status: SupabaseStatus,
+  diagnostics: SupabaseDiagnostics,
+  error: string | null,
+  saving: boolean,
+): { label: string; className: string; title: string; warn: boolean } {
+  if (status === 'misconfigured') {
+    const missing = !diagnostics.hasUrl ? 'NEXT_PUBLIC_SUPABASE_URL is missing' : 'NEXT_PUBLIC_SUPABASE_ANON_KEY is missing';
+    return {
+      label: 'SUPABASE?',
+      className: 'bg-rift-red/15 text-rift-red',
+      title: `Supabase misconfigured — ${missing}. Set both vars in .env.local, then restart the dev server.`,
+      warn: true,
+    };
+  }
+  if (status === 'supabase') {
+    if (error) {
+      return { label: 'SUPABASE', className: 'bg-rift-red/15 text-rift-red', title: `Supabase error: ${error}`, warn: true };
+    }
+    const detail = `Supabase ${diagnostics.urlHost ?? '?'} · key ${diagnostics.keyHint ?? '?'}`;
+    return saving
+      ? { label: 'SYNCING', className: 'bg-rift-green/15 text-rift-green', title: `Saving to ${detail}`, warn: false }
+      : { label: 'SUPABASE', className: 'bg-rift-green/15 text-rift-green', title: `Connected · ${detail}`, warn: false };
+  }
+  return {
+    label: 'MOCK MODE',
+    className: 'bg-rift-gold/15 text-rift-gold',
+    title: 'Local mock mode — data persists in your browser & syncs across tabs',
+    warn: false,
+  };
 }

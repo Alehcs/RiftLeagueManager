@@ -66,7 +66,7 @@ export class SupabaseAdapter implements DataAdapter {
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
   private activeWrites = 0;
   private reloadAfterWrite = false;
-  private anonymousAttempted = false;
+  private lastAuthError = '';
   private realtimeReload: (() => void) | null = null;
 
   constructor(private readonly client: SupabaseClient) {}
@@ -97,7 +97,13 @@ export class SupabaseAdapter implements DataAdapter {
   async saveDatabase(previous: Database, next: Database, _event?: DataEvent, _options?: { system?: boolean }): Promise<void> {
     const user = await this.getAuthenticatedUser(true);
     this.authUserId = user?.id ?? '';
-    if (!user) throw new Error('Unable to start the guest session. Check anonymous auth settings.');
+    if (!user) {
+      throw new Error(
+        this.lastAuthError
+          ? `Unable to start the guest session: ${this.lastAuthError}. Enable Anonymous Sign-Ins in Supabase Authentication.`
+          : 'Unable to start the guest session. Enable Anonymous Sign-Ins in Supabase Authentication.',
+      );
+    }
     if (!this.currentGuestId) this.currentGuestId = this.readGuestId();
     this.assertAuthorized(previous, next, this.currentGuestId);
 
@@ -170,7 +176,7 @@ export class SupabaseAdapter implements DataAdapter {
 
   async resetGuestIdentity(): Promise<void> {
     this.setGuestId(null);
-    this.anonymousAttempted = false;
+    this.lastAuthError = '';
     this.authUserId = '';
     const { error } = await this.client.auth.signOut({ scope: 'local' });
     if (error) throw error;
@@ -219,11 +225,14 @@ export class SupabaseAdapter implements DataAdapter {
   private async getAuthenticatedUser(createAnonymous = false): Promise<User | null> {
     const { data, error } = await this.client.auth.getUser();
     if (error && !error.message.toLowerCase().includes('session')) throw error;
-    if (data.user || !createAnonymous || this.anonymousAttempted) return data.user;
+    if (data.user || !createAnonymous) return data.user;
 
-    this.anonymousAttempted = true;
     const anonymous = await this.client.auth.signInAnonymously();
-    if (anonymous.error) return null;
+    if (anonymous.error) {
+      this.lastAuthError = anonymous.error.message;
+      return null;
+    }
+    this.lastAuthError = '';
     return anonymous.data.user;
   }
 

@@ -522,6 +522,16 @@ $$;
 revoke all on function public.recover_league_admin(text, text, uuid) from public;
 grant execute on function public.recover_league_admin(text, text, uuid) to authenticated;
 
+-- Base table privileges. RLS still gates which ROWS each role can touch; these
+-- grants give the anon/authenticated roles table-level access (some Supabase
+-- projects do not apply the default public grants). anon is read-only; guests
+-- (authenticated via anonymous sign-in) may write, gated by the policies above.
+grant usage on schema public to anon, authenticated;
+grant select on all tables in schema public to anon, authenticated;
+grant insert, update, delete on all tables in schema public to authenticated;
+alter default privileges in schema public grant select on tables to anon, authenticated;
+alter default privileges in schema public grant insert, update, delete on tables to authenticated;
+
 -- Keep auth bindings and recovery hashes out of public room reads.
 revoke select on guest_sessions from anon, authenticated;
 grant select (id, display_name, avatar_color, created_at, last_seen_at) on guest_sessions to anon, authenticated;

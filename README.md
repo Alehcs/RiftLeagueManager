@@ -189,9 +189,16 @@ stage,week,match_day,date_time,blue_team_short_name,red_team_short_name,format,s
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    SUPABASE_SERVICE_ROLE_KEY=...        # server-only
    ```
-5. Restart `npm run dev`. The navbar badge switches from **MOCK MODE** to **SUPABASE**.
+5. Restart `npm run dev` (env vars are read at server start). The navbar badge switches from **MOCK MODE** to **SUPABASE** (or **SUPABASE?** if only one var is set). Hover the badge for a masked diagnostic.
+
+The anon key accepts the legacy anon JWT (`eyJ…`) or the new publishable key (`sb_publishable_…`).
 
 Reads are public. The app creates an invisible anonymous auth session, then binds it to the browser's guest ID. League writes require an `owner`, `admin`, or `manager` guest role; league settings and role management remain owner/admin-only.
+
+**Troubleshooting**
+- Badge stays **MOCK MODE** with vars set → the dev server was started before `.env.local`; restart it.
+- `Unable to start the guest session: … anonymous_provider_disabled` → enable **Anonymous Sign-Ins** (step 2).
+- `permission denied for table …` → re-run `0001_init.sql`; it grants the `anon`/`authenticated` roles table access (some projects lack the default grants).
 
 ---
 
