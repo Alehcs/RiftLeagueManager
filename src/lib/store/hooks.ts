@@ -1,8 +1,8 @@
 'use client';
 
 import { useStore } from './store';
-import type { Database, GuestSession, League } from '@/lib/types';
-import { leagueByIdOrSlug } from './selectors';
+import type { AdminRole, Database, GuestSession, League } from '@/lib/types';
+import { leagueByIdOrSlug, managedTeamId, roleInLeague } from './selectors';
 
 // Subscribe to mutations (rev) and return the live, in-place-mutated db.
 export function useDb(): Database {
@@ -48,13 +48,19 @@ export function useCurrentGuest(): GuestSession | undefined {
 }
 
 // Role of the current user in a league (owner/admin/manager/viewer).
-export function useLeagueRole(leagueId: string | undefined): 'owner' | 'admin' | 'manager' | 'viewer' {
+export function useLeagueRole(leagueId: string | undefined): AdminRole {
   useStore((s) => s.rev);
   if (!leagueId) return 'viewer';
   const { db, currentGuestId } = useStore.getState();
-  if (db.leagues.some((league) => league.id === leagueId && league.owner_guest_id === currentGuestId)) return 'owner';
-  const a = db.league_admins.find((x) => x.league_id === leagueId && x.guest_id === currentGuestId);
-  return a?.role ?? 'viewer';
+  return roleInLeague(db, leagueId, currentGuestId);
+}
+
+// The team the current guest manages in this league (null if none).
+export function useManagedTeamId(leagueId: string | undefined): string | null {
+  useStore((s) => s.rev);
+  if (!leagueId) return null;
+  const { db, currentGuestId } = useStore.getState();
+  return managedTeamId(db, leagueId, currentGuestId);
 }
 
 export function canManage(role: string): boolean {
@@ -63,4 +69,11 @@ export function canManage(role: string): boolean {
 
 export function canAdminister(role: string): boolean {
   return role === 'owner' || role === 'admin';
+}
+
+// Whether the current guest may mutate a specific team's data.
+export function canManageTeam(role: AdminRole, managedTeam: string | null, teamId: string | null | undefined): boolean {
+  if (role === 'owner' || role === 'admin') return true;
+  if (role === 'manager') return !!teamId && managedTeam === teamId;
+  return false;
 }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink } from 'lucide-react';
 import type { Player, Team } from '@/lib/types';
 import { useStore } from '@/lib/store/store';
-import { useDb } from '@/lib/store/hooks';
+import { useDb, useLeagueRole, useManagedTeamId, canAdminister, canManageTeam } from '@/lib/store/hooks';
 import { teamById } from '@/lib/store/selectors';
 import { Dialog, ConfirmButton } from '@/components/ui/dialog';
 import { Button, Badge } from '@/components/ui/primitives';
@@ -20,13 +20,12 @@ export function PlayerDialog({
   open,
   onClose,
   teams,
-  canEdit,
 }: {
   player: Player;
   open: boolean;
   onClose: () => void;
   teams: Team[];
-  canEdit: boolean;
+  canEdit?: boolean;
 }) {
   const db = useDb();
   const updatePlayer = useStore((s) => s.updatePlayer);
@@ -34,8 +33,19 @@ export function PlayerDialog({
   const signPlayer = useStore((s) => s.signPlayer);
   const releasePlayer = useStore((s) => s.releasePlayer);
   const sellPlayer = useStore((s) => s.sellPlayer);
+  const setPlayerStatus = useStore((s) => s.setPlayerStatus);
+  const role = useLeagueRole(player.league_id);
+  const managedTeam = useManagedTeamId(player.league_id);
+
+  // Permissions: full edit/delete is admin-only; releasing/selling a rostered
+  // player or signing a free agent is scoped to the team the user manages.
+  const isAdmin = canAdminister(role);
+  const canManageThis = canManageTeam(role, managedTeam, player.team_id);
+  const signTeams = isAdmin ? teams : teams.filter((t) => t.id === managedTeam);
+  const canSign = signTeams.length > 0;
+
   const [editing, setEditing] = useState(false);
-  const [signTeam, setSignTeam] = useState('');
+  const [signTeam, setSignTeam] = useState(isAdmin ? '' : managedTeam ?? '');
 
   const team = teamById(db, player.team_id);
 
@@ -107,31 +117,40 @@ export function PlayerDialog({
             </a>
           )}
 
-          {/* Market actions */}
+          {/* Market actions (gated by role + team) */}
           <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
             {!player.team_id ? (
-              <div className="flex items-center gap-2">
-                <Select value={signTeam} onChange={(e) => setSignTeam(e.target.value)} className="w-44">
-                  <option value="">Sign to team…</option>
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </Select>
-                <Button variant="primary" size="sm" disabled={!signTeam} onClick={() => { signPlayer(player.id, signTeam); onClose(); }}>
-                  <UserPlus size={14} /> Sign
-                </Button>
-              </div>
+              canSign && (
+                <div className="flex items-center gap-2">
+                  <Select value={signTeam} onChange={(e) => setSignTeam(e.target.value)} className="w-44">
+                    {isAdmin && <option value="">Sign to team…</option>}
+                    {signTeams.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </Select>
+                  <Button variant="primary" size="sm" disabled={!signTeam} onClick={() => { signPlayer(player.id, signTeam); onClose(); }}>
+                    <UserPlus size={14} /> Sign
+                  </Button>
+                </div>
+              )
             ) : (
-              <>
-                <Button variant="outline" size="sm" onClick={() => releasePlayer(player.id)}>
-                  <LogOut size={14} /> Release
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => sellPlayer(player.id)}>
-                  <DollarSign size={14} /> Sell ({formatMoneyFull(player.value)})
-                </Button>
-              </>
+              canManageThis && (
+                <>
+                  {(player.status === 'active' || player.status === 'benched') && (
+                    <Button variant="secondary" size="sm" onClick={() => setPlayerStatus(player.id, player.status === 'active' ? 'benched' : 'active')}>
+                      {player.status === 'active' ? 'Bench' : 'Activate'}
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => releasePlayer(player.id)}>
+                    <LogOut size={14} /> Release
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => sellPlayer(player.id)}>
+                    <DollarSign size={14} /> Sell ({formatMoneyFull(player.value)})
+                  </Button>
+                </>
+              )
             )}
-            {canEdit && (
+            {isAdmin && (
               <>
                 <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
                   <Pencil size={14} /> Edit
@@ -141,6 +160,8 @@ export function PlayerDialog({
                 </ConfirmButton>
               </>
             )}
+            {!canSign && !player.team_id && <span className="text-xs text-slate-500">View only — claim a team to sign players.</span>}
+            {player.team_id && !canManageThis && !isAdmin && <span className="text-xs text-slate-500">Managed by another team.</span>}
           </div>
         </div>
       )}

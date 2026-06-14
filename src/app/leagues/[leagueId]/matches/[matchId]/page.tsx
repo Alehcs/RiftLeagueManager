@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, Play, RotateCcw, Save, Swords, Clock, Coins } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { teamById, gamesOf, playersOf, coachesOf } from '@/lib/store/selectors';
 import { computeTeamStrength } from '@/services/strength';
@@ -30,7 +30,7 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
   const blue = teamById(db, match.blue_team_id);
   const red = teamById(db, match.red_team_id);
   const games = gamesOf(db, match.id);
-  const manage = canManage(role);
+  const manage = canAdminister(role);
   const isDone = match.status === 'completed';
 
   const blueWon = match.winner_team_id === match.blue_team_id;

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Trophy, Play, Wand2, RotateCcw } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { bracketMatches, teamsOf, matchesOf, teamById } from '@/lib/store/selectors';
 import { BracketView } from '@/components/league/BracketView';
@@ -24,7 +24,7 @@ export default function PlayoffsPage({ params }: { params: { leagueId: string } 
   if (!league) return null;
   const teams = teamsOf(db, league.id);
   const bracket = bracketMatches(db, league.id);
-  const manage = canManage(role);
+  const manage = canAdminister(role);
   const champion = bracket.find((m) => m.stage === 'final' && m.winner_team_id);
   const champTeam = champion ? teamById(db, champion.winner_team_id) : null;
 

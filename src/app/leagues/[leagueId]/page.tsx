@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowRight, Crown, TrendingUp } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { teamsOf, matchesOf, playersOf } from '@/lib/store/selectors';
 import { standingsTable } from '@/services/standings';
 import { StandingsTable } from '@/components/league/StandingsTable';
@@ -34,7 +34,7 @@ export default function LeagueOverview({ params }: { params: { leagueId: string 
 
   return (
     <div className="space-y-6">
-      {canManage(role) && (
+      {canAdminister(role) && (
         <Card className="flex flex-col items-start justify-between gap-3 p-3 sm:flex-row sm:items-center">
           <div className="px-1 text-sm text-slate-400">
             <span className="font-medium text-slate-200">Simulation</span> — play out matches & advance the season.

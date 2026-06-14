@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Play, Trophy } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { matchesOf } from '@/lib/store/selectors';
 import { MatchCard } from '@/components/league/MatchCard';
@@ -15,7 +15,7 @@ export default function SchedulePage({ params }: { params: { leagueId: string } 
   const role = useLeagueRole(league?.id);
   const simulateWeek = useStore((s) => s.simulateWeek);
   if (!league) return null;
-  const manage = canManage(role);
+  const manage = canAdminister(role);
 
   const matches = matchesOf(db, league.id);
   const leaguePortion = matches.filter((m) => ['regular_season', 'group_stage', 'swiss'].includes(m.stage));

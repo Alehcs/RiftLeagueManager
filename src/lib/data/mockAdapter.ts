@@ -4,6 +4,7 @@ import { buildSeedDatabase } from '@/data/seed';
 import { BROADCAST_CHANNEL, GUEST_STORAGE_KEY, STORAGE_KEY } from '@/lib/constants';
 import { createRoomCode, nowISO, uid } from '@/lib/utils';
 import { EMPTY_DB, type Database, type GuestSession } from '@/lib/types';
+import { managedTeamId, roleInLeague } from '@/lib/store/selectors';
 import type { DataAdapter, DataEvent, DataSnapshot } from './index';
 
 type MockRow = Database[keyof Database][number];
@@ -97,6 +98,56 @@ export class MockAdapter implements DataAdapter {
     return league.id;
   }
 
+  async claimTeam(leagueId: string, teamId: string, guestId: string): Promise<void> {
+    const db = this.readLocalDatabase() ?? normalizeMockDatabase(buildSeedDatabase());
+    const team = db.teams.find((t) => t.id === teamId && t.league_id === leagueId);
+    if (!team) throw new Error('Team not found in this league.');
+    const taken = db.league_members.find(
+      (m) => m.league_id === leagueId && m.role === 'manager' && m.team_id === teamId && m.guest_id !== guestId,
+    );
+    if (taken) throw new Error('That team already has a manager.');
+    if (managedTeamId(db, leagueId, guestId) && managedTeamId(db, leagueId, guestId) !== teamId) {
+      throw new Error('You already manage another team in this league.');
+    }
+    const member = db.league_members.find((m) => m.league_id === leagueId && m.guest_id === guestId);
+    if (member) { member.role = 'manager'; member.team_id = teamId; }
+    else db.league_members.push({ id: uid('member'), league_id: leagueId, guest_id: guestId, role: 'manager', team_id: teamId, joined_at: nowISO() });
+    this.writeLocalDatabase(db);
+    this.channel?.postMessage({ origin: this.origin, db: structuredClone(db), event: { kind: 'roster', message: `${team.short_name} claimed` } } satisfies BroadcastMessage);
+  }
+
+  async acceptTrade(tradeId: string, guestId: string): Promise<void> {
+    const db = this.readLocalDatabase() ?? normalizeMockDatabase(buildSeedDatabase());
+    const trade = db.trades.find((t) => t.id === tradeId);
+    if (!trade) throw new Error('Trade not found.');
+    if (trade.status !== 'pending') throw new Error('This trade is no longer pending.');
+    const role = roleInLeague(db, trade.league_id, guestId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const reviewerTeam = managedTeamId(db, trade.league_id, guestId);
+    if (!isAdmin && reviewerTeam !== trade.to_team_id) {
+      throw new Error("Only the receiving team's manager or an admin can accept this trade.");
+    }
+    const items = db.trade_items.filter((ti) => ti.trade_id === tradeId);
+    for (const ti of items) {
+      const p = db.players.find((x) => x.id === ti.player_id);
+      if (p) {
+        p.team_id = ti.to_team_id;
+        p.status = 'active';
+        p.updated_at = nowISO();
+        db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: p.id, from_team_id: ti.from_team_id, to_team_id: ti.to_team_id, transfer_type: 'trade', amount: 0, created_at: nowISO() });
+      }
+    }
+    const fromTeam = db.teams.find((t) => t.id === trade.from_team_id);
+    const toTeam = db.teams.find((t) => t.id === trade.to_team_id);
+    if (fromTeam) fromTeam.budget += trade.money_to_team - trade.money_from_team;
+    if (toTeam) toTeam.budget += trade.money_from_team - trade.money_to_team;
+    trade.status = 'accepted';
+    trade.reviewed_at = nowISO();
+    trade.reviewed_by_guest_id = guestId;
+    this.writeLocalDatabase(db);
+    this.channel?.postMessage({ origin: this.origin, db: structuredClone(db), event: { kind: 'trade', message: 'Trade accepted' } } satisfies BroadcastMessage);
+  }
+
   trackPresence(
     leagueId: string,
     guest: GuestSession,
@@ -185,6 +236,13 @@ export class MockAdapter implements DataAdapter {
       db.league_admins
         .filter((admin) => admin.guest_id === guestId && ['owner', 'admin'].includes(admin.role))
         .forEach((admin) => administrable.add(admin.league_id));
+      // Team managers are stored in league_members.
+      db.league_members
+        .filter((member) => member.guest_id === guestId && ['owner', 'admin', 'manager'].includes(member.role))
+        .forEach((member) => editable.add(member.league_id));
+      db.league_members
+        .filter((member) => member.guest_id === guestId && ['owner', 'admin'].includes(member.role))
+        .forEach((member) => administrable.add(member.league_id));
     }
     const restricted = restrictedLeagueIds(previous, next);
     if ([...restricted].some((leagueId) => !administrable.has(leagueId))) {

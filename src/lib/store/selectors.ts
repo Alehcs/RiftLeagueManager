@@ -1,4 +1,4 @@
-import type { Coach, Database, Game, League, Match, Player, Team, Trade } from '@/lib/types';
+import type { AdminRole, Coach, Database, Game, League, LeagueMember, Match, Player, Team, Trade } from '@/lib/types';
 
 // ============================================================================
 // Pure selectors over the Database. Components call these with the live db
@@ -64,6 +64,52 @@ export const importJobsOf = (db: Database, leagueId: string | null) =>
 
 export const auditLogsOf = (db: Database, leagueId: string) =>
   db.audit_logs.filter((a) => a.league_id === leagueId).sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+
+// --- Membership / roles / team management -----------------------------------
+export const membersOf = (db: Database, leagueId: string): LeagueMember[] =>
+  db.league_members.filter((m) => m.league_id === leagueId);
+
+export const memberOf = (db: Database, leagueId: string, guestId: string): LeagueMember | undefined =>
+  db.league_members.find((m) => m.league_id === leagueId && m.guest_id === guestId);
+
+const RANK: Record<AdminRole, number> = { owner: 3, admin: 2, manager: 1, viewer: 0 };
+
+// Effective role of a guest in a league — highest of league ownership,
+// league_admins (owner/admin) and league_members (manager/viewer).
+export function roleInLeague(db: Database, leagueId: string, guestId: string): AdminRole {
+  if (!guestId) return 'viewer';
+  let best: AdminRole = 'viewer';
+  const bump = (r: AdminRole) => {
+    if (RANK[r] > RANK[best]) best = r;
+  };
+  if (db.leagues.some((l) => l.id === leagueId && l.owner_guest_id === guestId)) bump('owner');
+  const admin = db.league_admins.find((a) => a.league_id === leagueId && a.guest_id === guestId);
+  if (admin) bump(admin.role);
+  const member = db.league_members.find((m) => m.league_id === leagueId && m.guest_id === guestId);
+  if (member) bump(member.role);
+  return best;
+}
+
+// Team a guest manages in a league (their league_members manager row), if any.
+export function managedTeamId(db: Database, leagueId: string, guestId: string): string | null {
+  const member = db.league_members.find(
+    (m) => m.league_id === leagueId && m.guest_id === guestId && m.role === 'manager',
+  );
+  return member?.team_id ?? null;
+}
+
+// The guest currently managing a team (one main manager per team).
+export function teamManager(db: Database, leagueId: string, teamId: string): LeagueMember | undefined {
+  return db.league_members.find((m) => m.league_id === leagueId && m.role === 'manager' && m.team_id === teamId);
+}
+
+// Teams in a league without an assigned manager.
+export const unmanagedTeams = (db: Database, leagueId: string): Team[] => {
+  const claimed = new Set(
+    db.league_members.filter((m) => m.league_id === leagueId && m.role === 'manager' && m.team_id).map((m) => m.team_id),
+  );
+  return teamsOf(db, leagueId).filter((t) => !claimed.has(t.id));
+};
 
 export const bracketMatches = (db: Database, leagueId: string): Match[] =>
   db.matches

@@ -33,6 +33,7 @@ import {
   formatForLeague,
 } from '@/services/schedule';
 import { canAfford } from '@/services/transfers';
+import { roleInLeague, managedTeamId as managedTeamIdSel } from './selectors';
 import { generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
 import { buildLeagueExport, reidLeagueExport, isLeagueExport } from '@/services/leagueIO';
 import { normalizeRole, num, toObjects } from '@/services/csv';
@@ -138,6 +139,11 @@ interface StoreState {
   setLeagueAdmin: (leagueId: string, guestId: string, role: AdminRole, teamId?: string | null) => void;
   removeLeagueAdmin: (leagueId: string, guestId: string) => void;
 
+  // team managers (multiplayer)
+  claimTeam: (leagueId: string, teamId: string) => Promise<boolean>;
+  assignManager: (leagueId: string, guestId: string, teamId: string) => void;
+  removeManager: (leagueId: string, guestId: string) => void;
+
   // bulk csv import
   importCsv: (leagueId: string, type: 'players' | 'coaches' | 'teams' | 'matches', text: string) => { ok: number; failed: number };
 
@@ -233,6 +239,28 @@ export const useStore = create<StoreState>((set, get) => {
     set({ db: next, rev: get().rev + 1 });
     persistChange(previous, next, opts.broadcast === false ? undefined : opts.toast, opts.system);
   }
+
+  // permission helpers --------------------------------------------------------
+  const roleOf = (leagueId: string): AdminRole => roleInLeague(get().db, leagueId, get().currentGuestId);
+  const managedTeamOf = (leagueId: string): string | null =>
+    managedTeamIdSel(get().db, leagueId, get().currentGuestId);
+
+  // Owner/admin only. Reports a clear error + returns false when denied.
+  const requireAdmin = (leagueId: string, action = 'change league settings'): boolean => {
+    const role = roleOf(leagueId);
+    if (role === 'owner' || role === 'admin') return true;
+    reportError(new Error(`Only a league owner or admin can ${action}.`));
+    return false;
+  };
+
+  // Owner/admin (any team) or the manager of `teamId`.
+  const requireTeam = (leagueId: string, teamId: string | null | undefined, action = 'manage this team'): boolean => {
+    const role = roleOf(leagueId);
+    if (role === 'owner' || role === 'admin') return true;
+    if (role === 'manager' && teamId && managedTeamOf(leagueId) === teamId) return true;
+    reportError(new Error(`You can only ${action} for your own team.`));
+    return false;
+  };
 
   // helpers operating on the live db -----------------------------------------
   const recomputeStandings = (leagueId: string) => {
@@ -608,6 +636,7 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     resetLeagueResults(id) {
+      if (!requireAdmin(id, 'reset results')) return;
       commit(
         () => {
           const db = get().db;
@@ -637,6 +666,7 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     regenerateSchedule(id, format) {
+      if (!requireAdmin(id, 'regenerate the schedule')) return;
       commit(
         () => {
           const db = get().db;
@@ -657,6 +687,7 @@ export const useStore = create<StoreState>((set, get) => {
 
     // -- teams ----------------------------------------------------------------
     createTeam(leagueId, input) {
+      if (!requireAdmin(leagueId, 'add teams')) return '';
       const id = uid('t');
       const league = get().db.leagues.find((l) => l.id === leagueId);
       const ts = nowISO();
@@ -685,6 +716,7 @@ export const useStore = create<StoreState>((set, get) => {
     },
     updateTeam(id, patch) {
       const before = get().db.teams.find((t) => t.id === id);
+      if (before && !requireAdmin(before.league_id, 'edit teams')) return;
       commit(
         () => {
           const t = get().db.teams.find((x) => x.id === id);
@@ -694,6 +726,8 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     deleteTeam(id) {
+      const team = get().db.teams.find((t) => t.id === id);
+      if (team && !requireAdmin(team.league_id, 'remove teams')) return;
       commit(() => {
         const db = get().db;
         db.players.filter((p) => p.team_id === id).forEach((p) => (p.team_id = null));
@@ -704,6 +738,7 @@ export const useStore = create<StoreState>((set, get) => {
 
     // -- players --------------------------------------------------------------
     createPlayer(leagueId, input) {
+      if (!requireAdmin(leagueId, 'add players')) return '';
       const id = uid('p');
       const ts = nowISO();
       const role = input.role;
@@ -747,6 +782,9 @@ export const useStore = create<StoreState>((set, get) => {
     },
     updatePlayer(id, patch) {
       const before = get().db.players.find((p) => p.id === id);
+      // Full edits (ratings, value, role, team…) are admin-only. Managers change
+      // their own players' active/bench status via setPlayerStatus.
+      if (before && !requireAdmin(before.league_id, 'edit player details')) return;
       commit(
         () => {
           const p = get().db.players.find((x) => x.id === id);
@@ -756,9 +794,26 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     deletePlayer(id) {
+      const p0 = get().db.players.find((p) => p.id === id);
+      if (p0 && !requireAdmin(p0.league_id, 'remove players')) return;
       commit(() => { get().db.players = get().db.players.filter((p) => p.id !== id); }, { toast: { kind: 'info', message: 'Player removed' } });
     },
     signPlayer(playerId, teamId) {
+      const db0 = get().db;
+      const p0 = db0.players.find((x) => x.id === playerId);
+      const t0 = db0.teams.find((x) => x.id === teamId);
+      if (!p0 || !t0) return;
+      // Manager may sign a free agent to their own team; moving a player between
+      // existing teams is an owner/admin action.
+      if (p0.team_id && p0.team_id !== teamId) {
+        if (!requireAdmin(p0.league_id, 'move players between teams')) return;
+      } else if (!requireTeam(t0.league_id, teamId, 'sign players')) return;
+      // Signing a free agent costs the player's value; budget must allow it.
+      const cost = p0.team_id ? 0 : p0.value;
+      if (cost > 0 && t0.budget < cost) {
+        reportError(new Error(`${t0.short_name} can't afford ${p0.nickname} (needs ${cost.toLocaleString()}).`));
+        return;
+      }
       commit(
         () => {
           const db = get().db;
@@ -766,15 +821,19 @@ export const useStore = create<StoreState>((set, get) => {
           const t = db.teams.find((x) => x.id === teamId);
           if (!p || !t) return;
           const from = p.team_id;
+          if (!from && cost > 0) t.budget -= cost;
           p.team_id = teamId;
           p.status = 'active';
           p.updated_at = nowISO();
-          db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: playerId, from_team_id: from, to_team_id: teamId, transfer_type: from ? 'trade' : 'signing', amount: 0, created_at: nowISO() });
+          db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: playerId, from_team_id: from, to_team_id: teamId, transfer_type: from ? 'trade' : 'signing', amount: cost, created_at: nowISO() });
         },
-        { toast: { kind: 'success', message: `${teamShort(teamId)} signed ${get().db.players.find((p) => p.id === playerId)?.nickname}` } },
+        { toast: { kind: 'success', message: `${teamShort(teamId)} signed ${p0.nickname}` } },
       );
     },
     releasePlayer(playerId) {
+      const p0 = get().db.players.find((x) => x.id === playerId);
+      if (!p0) return;
+      if (!requireTeam(p0.league_id, p0.team_id, 'release players')) return;
       commit(
         () => {
           const db = get().db;
@@ -786,10 +845,13 @@ export const useStore = create<StoreState>((set, get) => {
           p.updated_at = nowISO();
           db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: playerId, from_team_id: from, to_team_id: null, transfer_type: 'release', amount: 0, created_at: nowISO() });
         },
-        { toast: { kind: 'info', message: `${get().db.players.find((p) => p.id === playerId)?.nickname} released to free agency` } },
+        { toast: { kind: 'info', message: `${p0.nickname} released to free agency` } },
       );
     },
     sellPlayer(playerId, price) {
+      const p0 = get().db.players.find((x) => x.id === playerId);
+      if (!p0) return;
+      if (!requireTeam(p0.league_id, p0.team_id, 'sell players')) return;
       commit(() => {
         const db = get().db;
         const p = db.players.find((x) => x.id === playerId);
@@ -802,10 +864,16 @@ export const useStore = create<StoreState>((set, get) => {
         p.status = 'free_agent';
         p.updated_at = nowISO();
         db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: playerId, from_team_id: from, to_team_id: null, transfer_type: 'sale', amount, created_at: nowISO() });
-      }, { toast: { kind: 'success', message: `Sold ${get().db.players.find((p) => p.id === playerId)?.nickname}` } });
+      }, { toast: { kind: 'success', message: `Sold ${p0.nickname}` } });
     },
     setPlayerStatus(playerId, status) {
-      get().updatePlayer(playerId, { status });
+      const p0 = get().db.players.find((x) => x.id === playerId);
+      if (!p0) return;
+      if (!requireTeam(p0.league_id, p0.team_id, 'set roster status')) return;
+      commit(() => {
+        const p = get().db.players.find((x) => x.id === playerId);
+        if (p) Object.assign(p, { status, updated_at: nowISO() });
+      });
     },
 
     // -- coaches --------------------------------------------------------------
@@ -865,6 +933,7 @@ export const useStore = create<StoreState>((set, get) => {
     simulateMatch(matchId) {
       const m = get().db.matches.find((x) => x.id === matchId);
       if (!m) return;
+      if (!requireAdmin(m.league_id, 'simulate matches')) return;
       commit(
         () => {
           const match = get().db.matches.find((x) => x.id === matchId)!;
@@ -875,6 +944,8 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     resetMatch(matchId) {
+      const m0 = get().db.matches.find((x) => x.id === matchId);
+      if (m0 && !requireAdmin(m0.league_id, 'reset matches')) return;
       commit(() => {
         const db = get().db;
         const m = db.matches.find((x) => x.id === matchId);
@@ -889,6 +960,8 @@ export const useStore = create<StoreState>((set, get) => {
       }, { toast: { kind: 'info', message: 'Match reset' } });
     },
     setMatchResult(matchId, blueScore, redScore) {
+      const m0 = get().db.matches.find((x) => x.id === matchId);
+      if (m0 && !requireAdmin(m0.league_id, 'edit match results')) return;
       commit(
         () => {
           const db = get().db;
@@ -906,6 +979,7 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     simulateWeek(leagueId, week) {
+      if (!requireAdmin(leagueId, 'simulate matches')) return;
       commit(
         () => {
           const db = get().db;
@@ -917,6 +991,7 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     simulateRegularSeason(leagueId) {
+      if (!requireAdmin(leagueId, 'simulate the season')) return;
       commit(
         () => {
           const db = get().db;
@@ -945,6 +1020,7 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     simulatePlayoffs(leagueId) {
+      if (!requireAdmin(leagueId, 'simulate playoffs')) return;
       commit(
         () => {
           const db = get().db;
@@ -961,6 +1037,7 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
     simulateFullTournament(leagueId) {
+      if (!requireAdmin(leagueId, 'simulate the tournament')) return;
       get().simulateRegularSeason(leagueId);
       get().simulatePlayoffs(leagueId);
       get().pushToast({ kind: 'success', message: 'Full tournament simulated' });
@@ -968,6 +1045,7 @@ export const useStore = create<StoreState>((set, get) => {
 
     // -- playoffs generation --------------------------------------------------
     generatePlayoffs(leagueId, opts) {
+      if (!requireAdmin(leagueId, 'generate playoffs')) return;
       commit(
         () => {
           const db = get().db;
@@ -994,6 +1072,8 @@ export const useStore = create<StoreState>((set, get) => {
 
     // -- trades ---------------------------------------------------------------
     proposeTrade(input) {
+      // The proposer must manage the offering team (or be owner/admin).
+      if (!requireTeam(input.leagueId, input.fromTeamId, 'propose trades')) return '';
       const id = uid('tr');
       const ts = nowISO();
       commit(
@@ -1020,14 +1100,30 @@ export const useStore = create<StoreState>((set, get) => {
       return id;
     },
     setTradeStatus(tradeId, status) {
-      const trade = get().db.trades.find((t) => t.id === tradeId);
+      const db = get().db;
+      const trade = db.trades.find((t) => t.id === tradeId);
       if (!trade) return;
+      const role = roleOf(trade.league_id);
+      const isAdmin = role === 'owner' || role === 'admin';
+      const myTeam = managedTeamOf(trade.league_id);
+
+      if (status === 'cancelled') {
+        // The proposer (or an owner/admin) can withdraw a pending trade.
+        if (!(isAdmin || trade.proposed_by_guest_id === get().currentGuestId)) {
+          reportError(new Error('Only the proposing manager or an admin can cancel this trade.'));
+          return;
+        }
+      } else {
+        // accept/reject: the receiving team's manager or an owner/admin.
+        if (!(isAdmin || myTeam === trade.to_team_id)) {
+          reportError(new Error("Only the receiving team's manager or an admin can respond to this trade."));
+          return;
+        }
+      }
+
       if (status === 'accepted') {
-        const db = get().db;
-        const items = db.trade_items.filter((ti) => ti.trade_id === tradeId);
         const fromTeam = db.teams.find((t) => t.id === trade.from_team_id);
         const toTeam = db.teams.find((t) => t.id === trade.to_team_id);
-        // budget validation
         if (fromTeam && toTeam) {
           const fromNet = trade.money_to_team - trade.money_from_team;
           const toNet = trade.money_from_team - trade.money_to_team;
@@ -1036,47 +1132,95 @@ export const useStore = create<StoreState>((set, get) => {
             return;
           }
         }
-        commit(
-          () => {
-            items.forEach((ti) => {
-              const p = db.players.find((x) => x.id === ti.player_id);
-              if (p) { p.team_id = ti.to_team_id; p.status = 'active'; p.updated_at = nowISO(); db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: p.id, from_team_id: ti.from_team_id, to_team_id: ti.to_team_id, transfer_type: 'trade', amount: 0, created_at: nowISO() }); }
-            });
-            if (fromTeam) fromTeam.budget += trade.money_to_team - trade.money_from_team;
-            if (toTeam) toTeam.budget += trade.money_from_team - trade.money_to_team;
-            trade.status = 'accepted';
-            trade.reviewed_at = nowISO();
-            trade.reviewed_by_guest_id = get().currentGuestId;
-          },
-          { toast: { kind: 'trade', message: 'Trade accepted' } },
-        );
-      } else {
-        commit(() => {
-          trade.status = status;
-          trade.reviewed_at = nowISO();
-          trade.reviewed_by_guest_id = get().currentGuestId;
-        }, { toast: { kind: 'trade', message: `Trade ${status}` } });
+        // Acceptance mutates BOTH teams, so it runs through the adapter (a
+        // SECURITY DEFINER RPC in Supabase, in-memory in mock) rather than a
+        // per-team client write that RLS would block for a single manager.
+        if (!adapter) return;
+        void adapter
+          .acceptTrade(tradeId, get().currentGuestId)
+          .then(() => {
+            get().refresh();
+            get().pushToast({ kind: 'trade', message: 'Trade accepted' });
+          })
+          .catch(reportError);
+        return;
       }
+
+      commit(() => {
+        const t = get().db.trades.find((x) => x.id === tradeId);
+        if (t) {
+          t.status = status;
+          t.reviewed_at = nowISO();
+          t.reviewed_by_guest_id = get().currentGuestId;
+        }
+      }, { toast: { kind: 'trade', message: `Trade ${status}` } });
     },
 
     // -- admins ---------------------------------------------------------------
     setLeagueAdmin(leagueId, guestId, role, teamId = null) {
+      if (!requireAdmin(leagueId, 'manage roles')) return;
       commit(() => {
         const db = get().db;
         const existing = db.league_admins.find((a) => a.league_id === leagueId && a.guest_id === guestId);
         if (existing) { existing.role = role; existing.team_id = teamId; }
         else db.league_admins.push({ id: uid('la'), league_id: leagueId, guest_id: guestId, role, team_id: teamId });
         const member = db.league_members.find((item) => item.league_id === leagueId && item.guest_id === guestId);
-        if (member) member.role = role;
-        else db.league_members.push({ id: uid('member'), league_id: leagueId, guest_id: guestId, role, joined_at: nowISO() });
+        if (member) { member.role = role; member.team_id = role === 'manager' ? teamId : null; }
+        else db.league_members.push({ id: uid('member'), league_id: leagueId, guest_id: guestId, role, team_id: role === 'manager' ? teamId : null, joined_at: nowISO() });
       }, { toast: { kind: 'info', message: `Set ${role} role` } });
     },
     removeLeagueAdmin(leagueId, guestId) {
+      if (!requireAdmin(leagueId, 'manage roles')) return;
       commit(() => {
         get().db.league_admins = get().db.league_admins.filter((a) => !(a.league_id === leagueId && a.guest_id === guestId));
         const member = get().db.league_members.find((item) => item.league_id === leagueId && item.guest_id === guestId);
-        if (member) member.role = 'viewer';
+        if (member) { member.role = 'viewer'; member.team_id = null; }
       });
+    },
+
+    // -- team managers --------------------------------------------------------
+    async claimTeam(leagueId, teamId) {
+      const guestId = get().currentGuestId;
+      if (!guestId) {
+        reportError(new Error('Choose a nickname before claiming a team.'));
+        return false;
+      }
+      if (!adapter) return false;
+      try {
+        await adapter.claimTeam(leagueId, teamId, guestId);
+        get().refresh();
+        const team = get().db.teams.find((t) => t.id === teamId);
+        get().pushToast({ kind: 'success', message: `You now manage ${team?.short_name ?? 'this team'}` });
+        return true;
+      } catch (error) {
+        reportError(error);
+        return false;
+      }
+    },
+    assignManager(leagueId, guestId, teamId) {
+      if (!requireAdmin(leagueId, 'assign managers')) return;
+      const taken = get().db.league_members.find(
+        (m) => m.league_id === leagueId && m.role === 'manager' && m.team_id === teamId && m.guest_id !== guestId,
+      );
+      if (taken) {
+        reportError(new Error('That team already has a manager. Remove them first.'));
+        return;
+      }
+      commit(() => {
+        const db = get().db;
+        const member = db.league_members.find((m) => m.league_id === leagueId && m.guest_id === guestId);
+        if (member) { member.role = 'manager'; member.team_id = teamId; }
+        else db.league_members.push({ id: uid('member'), league_id: leagueId, guest_id: guestId, role: 'manager', team_id: teamId, joined_at: nowISO() });
+      }, { toast: { kind: 'roster', message: `${teamShort(teamId)} manager assigned` } });
+    },
+    removeManager(leagueId, guestId) {
+      // An owner/admin may remove anyone; a manager may step down from their own team.
+      const isSelf = guestId === get().currentGuestId;
+      if (!isSelf && !requireAdmin(leagueId, 'remove managers')) return;
+      commit(() => {
+        const member = get().db.league_members.find((m) => m.league_id === leagueId && m.guest_id === guestId);
+        if (member && member.role === 'manager') { member.role = 'viewer'; member.team_id = null; }
+      }, { toast: { kind: 'roster', message: 'Team manager removed' } });
     },
 
     // -- CSV import -----------------------------------------------------------

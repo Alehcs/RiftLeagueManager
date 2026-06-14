@@ -1,6 +1,6 @@
 'use client';
 
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { teamsOf, matchesOf, groupLabels } from '@/lib/store/selectors';
 import { StandingsTable } from '@/components/league/StandingsTable';
 import { SimControls } from '@/components/league/SimControls';
@@ -26,7 +26,7 @@ export default function StandingsPage({ params }: { params: { leagueId: string }
             Ranked by series wins, then game differential. {cutoff != null && <span className="text-rift-cyan">Top {cutoff} qualify.</span>}
           </p>
         </div>
-        {canManage(role) && <SimControls leagueId={league.id} compact />}
+        {canAdminister(role) && <SimControls leagueId={league.id} compact />}
       </div>
 
       {teams.length === 0 ? (

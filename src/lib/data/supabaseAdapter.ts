@@ -193,6 +193,23 @@ export class SupabaseAdapter implements DataAdapter {
     return String(data);
   }
 
+  async claimTeam(leagueId: string, teamId: string, guestId: string): Promise<void> {
+    const { error } = await this.client.rpc('claim_team', {
+      target_league_id: leagueId,
+      target_team_id: teamId,
+      target_guest_id: guestId,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async acceptTrade(tradeId: string, guestId: string): Promise<void> {
+    const { error } = await this.client.rpc('accept_trade', {
+      target_trade_id: tradeId,
+      target_guest_id: guestId,
+    });
+    if (error) throw new Error(error.message);
+  }
+
   trackPresence(
     leagueId: string,
     guest: GuestSession,
@@ -304,6 +321,13 @@ export class SupabaseAdapter implements DataAdapter {
       db.league_admins
         .filter((admin) => admin.guest_id === guestId && ['owner', 'admin'].includes(admin.role))
         .forEach((admin) => administrable.add(admin.league_id));
+      // Team managers are stored in league_members.
+      db.league_members
+        .filter((member) => member.guest_id === guestId && ['owner', 'admin', 'manager'].includes(member.role))
+        .forEach((member) => editable.add(member.league_id));
+      db.league_members
+        .filter((member) => member.guest_id === guestId && ['owner', 'admin'].includes(member.role))
+        .forEach((member) => administrable.add(member.league_id));
     }
 
     const restricted = restrictedLeagueIds(previous, next);

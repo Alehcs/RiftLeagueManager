@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ArrowLeftRight } from 'lucide-react';
 import type { Player, Team } from '@/lib/types';
 import { useStore } from '@/lib/store/store';
+import { useLeagueRole, useManagedTeamId } from '@/lib/store/hooks';
 import { tradeBalance } from '@/services/transfers';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/primitives';
@@ -27,8 +28,13 @@ export function TradeDialog({
   defaultFromTeam?: string;
 }) {
   const propose = useStore((s) => s.proposeTrade);
-  const [fromTeam, setFromTeam] = useState(defaultFromTeam ?? teams[0]?.id ?? '');
-  const [toTeam, setToTeam] = useState(teams.find((t) => t.id !== (defaultFromTeam ?? teams[0]?.id))?.id ?? '');
+  const role = useLeagueRole(leagueId);
+  const managedTeam = useManagedTeamId(leagueId);
+  // A manager may only offer from the team they control; admins choose freely.
+  const lockedFrom = role === 'manager' ? managedTeam : null;
+  const initialFrom = lockedFrom ?? defaultFromTeam ?? teams[0]?.id ?? '';
+  const [fromTeam, setFromTeam] = useState(initialFrom);
+  const [toTeam, setToTeam] = useState(teams.find((t) => t.id !== initialFrom)?.id ?? '');
   const [fromSel, setFromSel] = useState<string[]>([]);
   const [toSel, setToSel] = useState<string[]>([]);
   const [moneyFrom, setMoneyFrom] = useState(0);
@@ -52,7 +58,7 @@ export function TradeDialog({
     <Dialog open={open} onClose={onClose} size="xl" title="Propose a trade">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <RosterColumn label="Team A" teamId={fromTeam} setTeam={setFromTeam} teams={teams} roster={fromRoster} selected={fromSel} onToggle={(id) => toggle(fromSel, setFromSel, id)} />
+          <RosterColumn label={lockedFrom ? 'Your team' : 'Team A'} teamId={fromTeam} setTeam={setFromTeam} teams={teams} roster={fromRoster} selected={fromSel} onToggle={(id) => toggle(fromSel, setFromSel, id)} locked={!!lockedFrom} />
           <RosterColumn label="Team B" teamId={toTeam} setTeam={setToTeam} teams={teams} roster={toRoster} selected={toSel} onToggle={(id) => toggle(toSel, setToSel, id)} />
         </div>
 
@@ -99,7 +105,7 @@ export function TradeDialog({
 }
 
 function RosterColumn({
-  label, teamId, setTeam, teams, roster, selected, onToggle,
+  label, teamId, setTeam, teams, roster, selected, onToggle, locked,
 }: {
   label: string;
   teamId: string;
@@ -108,11 +114,12 @@ function RosterColumn({
   roster: Player[];
   selected: string[];
   onToggle: (id: string) => void;
+  locked?: boolean;
 }) {
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-slate-400">{label}</label>
-      <Select value={teamId} onChange={(e) => setTeam(e.target.value)} className="mb-2">
+      <Select value={teamId} onChange={(e) => setTeam(e.target.value)} className="mb-2" disabled={locked}>
         {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
       </Select>
       <div className="max-h-60 space-y-1 overflow-y-auto rounded-lg border border-border p-1.5">

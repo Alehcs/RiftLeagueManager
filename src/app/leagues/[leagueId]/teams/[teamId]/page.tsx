@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronLeft, Pencil, Trash2, Plus, Wallet, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
+import { ChevronLeft, Pencil, Trash2, Plus, Wallet, AlertTriangle, CheckCircle2, Info, Crown, UserPlus, UserMinus } from 'lucide-react';
+import {
+  useDb, useLeague, useLeagueRole, useManagedTeamId, useCurrentGuestId, canAdminister, canManageTeam,
+} from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
-import { playersOfTeam, coachesOfTeam, teamsOf, matchesOf, teamById } from '@/lib/store/selectors';
+import { playersOfTeam, coachesOfTeam, teamsOf, matchesOf, teamById, teamManager } from '@/lib/store/selectors';
 import { computeTeamStrength } from '@/services/strength';
 import { validateRoster, salaryCommitment } from '@/services/transfers';
 import { ROLE_META } from '@/lib/constants';
@@ -25,9 +27,13 @@ export default function TeamProfilePage({ params }: { params: { leagueId: string
   const db = useDb();
   const league = useLeague(params.leagueId);
   const role = useLeagueRole(league?.id);
+  const managedTeam = useManagedTeamId(league?.id);
+  const myGuestId = useCurrentGuestId();
   const updateTeam = useStore((s) => s.updateTeam);
   const deleteTeam = useStore((s) => s.deleteTeam);
   const createPlayer = useStore((s) => s.createPlayer);
+  const claimTeam = useStore((s) => s.claimTeam);
+  const removeManager = useStore((s) => s.removeManager);
   const editDialog = useDialog();
   const addPlayerDialog = useDialog();
 
@@ -42,7 +48,14 @@ export default function TeamProfilePage({ params }: { params: { leagueId: string
   const strength = computeTeamStrength(team, allPlayers, allCoaches);
   const validation = validateRoster(team, allPlayers, allCoaches);
   const salaries = salaryCommitment(team, allPlayers, allCoaches);
-  const manage = canManage(role);
+  const isAdmin = canAdminister(role);
+  const manage = canManageTeam(role, managedTeam, team.id); // can manage THIS team's roster
+  const managerMember = teamManager(db, league.id, team.id);
+  const managerGuest = managerMember ? db.guest_sessions.find((g) => g.id === managerMember.guest_id) : undefined;
+  const isMyTeam = managerMember?.guest_id === myGuestId;
+  // A non-managing member may claim this team when it is unmanaged and they
+  // don't already manage another team in the league.
+  const canClaim = !managerMember && !managedTeam && role !== 'owner' && role !== 'admin';
 
   const matches = matchesOf(db, league.id)
     .filter((m) => m.blue_team_id === team.id || m.red_team_id === team.id)
@@ -72,20 +85,46 @@ export default function TeamProfilePage({ params }: { params: { leagueId: string
             <RegionBadge region={team.region} />
             <span className="font-mono text-sm text-slate-500">{team.short_name}</span>
           </div>
-          <div className="mt-1 flex items-center gap-2 text-sm text-slate-400">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
             <Wallet size={14} /> {formatMoney(team.budget)} budget
             <span className="text-slate-700">·</span>
             <span>{formatMoney(salaries)} salaries</span>
+            <span className="text-slate-700">·</span>
+            <span className="inline-flex items-center gap-1">
+              <Crown size={13} className={managerGuest ? 'text-rift-gold' : 'text-slate-600'} />
+              {managerGuest ? (
+                <span className="text-slate-300">Manager: <span className="font-medium text-slate-100">{managerGuest.display_name}</span>{isMyTeam && ' (you)'}</span>
+              ) : (
+                <span className="text-slate-500">Unmanaged</span>
+              )}
+            </span>
           </div>
         </div>
-        {manage && (
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={editDialog.openIt}><Pencil size={14} /> Edit</Button>
-            <ConfirmButton variant="ghost" size="sm" confirmLabel="Delete team?" onConfirm={() => deleteTeam(team.id)}>
-              <Trash2 size={14} />
+        <div className="flex flex-wrap gap-2">
+          {canClaim && (
+            <Button variant="primary" size="sm" onClick={() => claimTeam(league.id, team.id)}>
+              <UserPlus size={14} /> Claim team
+            </Button>
+          )}
+          {isMyTeam && (
+            <ConfirmButton variant="outline" size="sm" confirmLabel="Leave team?" onConfirm={() => removeManager(league.id, myGuestId)}>
+              <UserMinus size={14} /> Leave
             </ConfirmButton>
-          </div>
-        )}
+          )}
+          {isAdmin && managerMember && !isMyTeam && (
+            <ConfirmButton variant="ghost" size="sm" confirmLabel="Remove manager?" onConfirm={() => removeManager(league.id, managerMember.guest_id)}>
+              <UserMinus size={14} /> Remove mgr
+            </ConfirmButton>
+          )}
+          {isAdmin && (
+            <>
+              <Button variant="secondary" size="sm" onClick={editDialog.openIt}><Pencil size={14} /> Edit</Button>
+              <ConfirmButton variant="ghost" size="sm" confirmLabel="Delete team?" onConfirm={() => deleteTeam(team.id)}>
+                <Trash2 size={14} />
+              </ConfirmButton>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4">
@@ -100,7 +139,7 @@ export default function TeamProfilePage({ params }: { params: { leagueId: string
         <div className="space-y-3 lg:col-span-2">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-slate-200">Roster ({roster.length})</h2>
-            {manage && (
+            {isAdmin && (
               <Button variant="secondary" size="sm" onClick={addPlayerDialog.openIt}>
                 <Plus size={14} /> Add to roster
               </Button>

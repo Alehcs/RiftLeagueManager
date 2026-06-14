@@ -67,6 +67,7 @@ create table if not exists league_members (
   league_id uuid not null references leagues(id) on delete cascade,
   guest_id uuid not null references guest_sessions(id) on delete cascade,
   role text not null default 'viewer' check (role in ('owner','admin','manager','viewer')),
+  team_id uuid, -- the team a manager controls (null otherwise); FK omitted (teams created later)
   joined_at timestamptz not null default now(),
   unique (league_id, guest_id)
 );
@@ -287,6 +288,7 @@ alter table leagues alter column room_code set not null;
 alter table league_admins alter column user_id drop not null;
 alter table league_admins add column if not exists guest_id uuid references guest_sessions(id) on delete cascade;
 create unique index if not exists league_admins_guest_idx on league_admins(league_id, guest_id);
+alter table league_members add column if not exists team_id uuid;
 alter table trades add column if not exists proposed_by_guest_id uuid references guest_sessions(id) on delete set null;
 alter table trades add column if not exists reviewed_by_guest_id uuid references guest_sessions(id) on delete set null;
 alter table audit_logs add column if not exists actor_guest_id uuid references guest_sessions(id) on delete set null;
@@ -342,9 +344,36 @@ as $$
 $$;
 
 revoke all on function public.current_guest_id() from public;
+-- True when the current guest may write a given team: an owner/admin of the
+-- team's league, or the manager assigned to that team.
+create or replace function public.manages_team(target_team_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.teams t
+    where t.id = target_team_id
+      and (
+        public.has_league_role(t.league_id, array['owner','admin'])
+        or exists (
+          select 1 from public.league_members m
+          where m.league_id = t.league_id
+            and m.team_id = target_team_id
+            and m.guest_id = public.current_guest_id()
+            and m.role = 'manager'
+        )
+      )
+  );
+$$;
+
 revoke all on function public.has_league_role(uuid, text[]) from public;
+revoke all on function public.manages_team(uuid) from public;
 grant execute on function public.current_guest_id() to anon, authenticated;
 grant execute on function public.has_league_role(uuid, text[]) to anon, authenticated;
+grant execute on function public.manages_team(uuid) to anon, authenticated;
 
 do $$
 declare t text;
@@ -376,13 +405,23 @@ drop policy if exists "league members self update" on league_members;
 drop policy if exists "league members self delete" on league_members;
 drop policy if exists "league members admin manage" on league_members;
 drop policy if exists "teams write" on teams;
+drop policy if exists "teams admin write" on teams;
+drop policy if exists "teams manager write" on teams;
 drop policy if exists "players write" on players;
+drop policy if exists "players admin write" on players;
+drop policy if exists "players manager write" on players;
 drop policy if exists "coaches write" on coaches;
 drop policy if exists "matches write" on matches;
 drop policy if exists "games write" on games;
 drop policy if exists "trades write" on trades;
+drop policy if exists "trades admin write" on trades;
+drop policy if exists "trades manager write" on trades;
 drop policy if exists "trade items write" on trade_items;
+drop policy if exists "trade items admin write" on trade_items;
+drop policy if exists "trade items manager write" on trade_items;
 drop policy if exists "transfer history write" on transfer_history;
+drop policy if exists "transfer history admin write" on transfer_history;
+drop policy if exists "transfer history manager write" on transfer_history;
 drop policy if exists "audit logs insert" on audit_logs;
 drop policy if exists "audit logs write" on audit_logs;
 drop policy if exists "import sources write" on import_sources;
@@ -431,56 +470,96 @@ create policy "league members admin manage" on league_members for all to authent
   with check (public.has_league_role(league_id, array['owner','admin']));
 
 create policy "public read" on teams for select using (true);
-create policy "teams write" on teams for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin','manager']))
-  with check (public.has_league_role(league_id, array['owner','admin','manager']));
+-- Owner/admin manage every team; a manager may update their own team (e.g. budget).
+create policy "teams admin write" on teams for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "teams manager write" on teams for all to authenticated
+  using (public.manages_team(id))
+  with check (public.manages_team(id));
 
 create policy "public read" on players for select using (true);
-create policy "players write" on players for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin','manager']))
-  with check (public.has_league_role(league_id, array['owner','admin','manager']));
+-- Owner/admin manage all players; a manager may move players for their own team
+-- and sign free agents in a league they manage in (client upserts, so policies
+-- cover the INSERT-with-check + UPDATE arms).
+create policy "players admin write" on players for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "players manager write" on players for all to authenticated
+  using (
+    public.manages_team(team_id)
+    or (team_id is null and exists (
+      select 1 from public.league_members m
+      where m.league_id = players.league_id and m.guest_id = public.current_guest_id() and m.role = 'manager'
+    ))
+  )
+  with check (
+    public.manages_team(team_id)
+    or (team_id is null and exists (
+      select 1 from public.league_members m
+      where m.league_id = players.league_id and m.guest_id = public.current_guest_id() and m.role = 'manager'
+    ))
+  );
 
+-- Coaches, matches and games are owner/admin only (managers don't simulate).
 create policy "public read" on coaches for select using (true);
 create policy "coaches write" on coaches for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin','manager']))
-  with check (public.has_league_role(league_id, array['owner','admin','manager']));
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
 
 create policy "public read" on matches for select using (true);
 create policy "matches write" on matches for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin','manager']))
-  with check (public.has_league_role(league_id, array['owner','admin','manager']));
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
 
 create policy "public read" on games for select using (true);
 create policy "games write" on games for all to authenticated
   using (exists (
     select 1 from matches where matches.id = games.match_id
-      and public.has_league_role(matches.league_id, array['owner','admin','manager'])
+      and public.has_league_role(matches.league_id, array['owner','admin'])
   ))
   with check (exists (
     select 1 from matches where matches.id = games.match_id
-      and public.has_league_role(matches.league_id, array['owner','admin','manager'])
+      and public.has_league_role(matches.league_id, array['owner','admin'])
   ));
 
+-- Trades: owner/admin full; a manager may write trades involving their team
+-- (propose / reject / cancel). Cross-team acceptance runs via accept_trade().
 create policy "public read" on trades for select using (true);
-create policy "trades write" on trades for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin','manager']))
-  with check (public.has_league_role(league_id, array['owner','admin','manager']));
+create policy "trades admin write" on trades for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "trades manager write" on trades for all to authenticated
+  using (public.manages_team(from_team_id) or public.manages_team(to_team_id))
+  with check (public.manages_team(from_team_id) or public.manages_team(to_team_id));
 
 create policy "public read" on trade_items for select using (true);
-create policy "trade items write" on trade_items for all to authenticated
+create policy "trade items admin write" on trade_items for all to authenticated
   using (exists (
     select 1 from trades where trades.id = trade_items.trade_id
-      and public.has_league_role(trades.league_id, array['owner','admin','manager'])
+      and public.has_league_role(trades.league_id, array['owner','admin'])
   ))
   with check (exists (
     select 1 from trades where trades.id = trade_items.trade_id
-      and public.has_league_role(trades.league_id, array['owner','admin','manager'])
+      and public.has_league_role(trades.league_id, array['owner','admin'])
+  ));
+create policy "trade items manager write" on trade_items for all to authenticated
+  using (exists (
+    select 1 from trades where trades.id = trade_items.trade_id
+      and (public.manages_team(trades.from_team_id) or public.manages_team(trades.to_team_id))
+  ))
+  with check (exists (
+    select 1 from trades where trades.id = trade_items.trade_id
+      and (public.manages_team(trades.from_team_id) or public.manages_team(trades.to_team_id))
   ));
 
 create policy "public read" on transfer_history for select using (true);
-create policy "transfer history write" on transfer_history for all to authenticated
-  using (public.has_league_role(league_id, array['owner','admin','manager']))
-  with check (public.has_league_role(league_id, array['owner','admin','manager']));
+create policy "transfer history admin write" on transfer_history for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "transfer history manager write" on transfer_history for all to authenticated
+  using (public.manages_team(from_team_id) or public.manages_team(to_team_id))
+  with check (public.manages_team(from_team_id) or public.manages_team(to_team_id));
 
 create policy "public read" on audit_logs for select using (true);
 create policy "audit logs write" on audit_logs for all to authenticated
@@ -536,6 +615,95 @@ $$;
 
 revoke all on function public.recover_league_admin(text, text, uuid) from public;
 grant execute on function public.recover_league_admin(text, text, uuid) to authenticated;
+
+-- A league member claims an unclaimed team as its manager (self-service).
+-- SECURITY DEFINER so it can validate + write past the per-team RLS policies.
+create or replace function public.claim_team(
+  target_league_id uuid,
+  target_team_id uuid,
+  target_guest_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if public.current_guest_id() is distinct from target_guest_id then
+    raise exception 'Guest session mismatch';
+  end if;
+  if not exists (select 1 from public.teams where id = target_team_id and league_id = target_league_id) then
+    raise exception 'Team not found in this league';
+  end if;
+  if not exists (select 1 from public.league_members where league_id = target_league_id and guest_id = target_guest_id)
+     and not exists (select 1 from public.leagues where id = target_league_id and owner_guest_id = target_guest_id) then
+    raise exception 'Join the league before claiming a team';
+  end if;
+  if exists (
+    select 1 from public.league_members
+    where league_id = target_league_id and team_id = target_team_id and role = 'manager' and guest_id <> target_guest_id
+  ) then
+    raise exception 'That team already has a manager';
+  end if;
+  insert into public.league_members (league_id, guest_id, role, team_id)
+  values (target_league_id, target_guest_id, 'manager', target_team_id)
+  on conflict (league_id, guest_id) do update set role = 'manager', team_id = target_team_id;
+  return true;
+end;
+$$;
+
+revoke all on function public.claim_team(uuid, uuid, uuid) from public;
+grant execute on function public.claim_team(uuid, uuid, uuid) to authenticated;
+
+-- Execute an accepted trade across both teams atomically. SECURITY DEFINER so a
+-- single manager can move the counterparty's players/budget after validation.
+create or replace function public.accept_trade(target_trade_id uuid, target_guest_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  tr public.trades;
+  reviewer_team uuid;
+  is_admin boolean;
+  item public.trade_items;
+begin
+  if public.current_guest_id() is distinct from target_guest_id then
+    raise exception 'Guest session mismatch';
+  end if;
+  select * into tr from public.trades where id = target_trade_id;
+  if tr.id is null then raise exception 'Trade not found'; end if;
+  if tr.status <> 'pending' then raise exception 'Trade is no longer pending'; end if;
+
+  is_admin := public.has_league_role(tr.league_id, array['owner','admin']);
+  select team_id into reviewer_team
+  from public.league_members
+  where league_id = tr.league_id and guest_id = target_guest_id and role = 'manager'
+  limit 1;
+  if not is_admin and reviewer_team is distinct from tr.to_team_id then
+    raise exception 'Only the receiving team manager or an admin can accept this trade';
+  end if;
+
+  for item in select * from public.trade_items where trade_id = target_trade_id loop
+    update public.players set team_id = item.to_team_id, status = 'active', updated_at = now()
+    where id = item.player_id;
+    insert into public.transfer_history (league_id, player_id, from_team_id, to_team_id, transfer_type, amount)
+    values (tr.league_id, item.player_id, item.from_team_id, item.to_team_id, 'trade', 0);
+  end loop;
+
+  update public.teams set budget = budget + (tr.money_to_team - tr.money_from_team), updated_at = now()
+  where id = tr.from_team_id;
+  update public.teams set budget = budget + (tr.money_from_team - tr.money_to_team), updated_at = now()
+  where id = tr.to_team_id;
+  update public.trades set status = 'accepted', reviewed_at = now(), reviewed_by_guest_id = target_guest_id
+  where id = target_trade_id;
+  return true;
+end;
+$$;
+
+revoke all on function public.accept_trade(uuid, uuid) from public;
+grant execute on function public.accept_trade(uuid, uuid) to authenticated;
 
 -- Base table privileges. RLS still gates which ROWS each role can touch; these
 -- grants give the anon/authenticated roles table-level access (some Supabase

@@ -107,6 +107,8 @@ export interface LeagueMember {
   league_id: string;
   guest_id: string;
   role: AdminRole;
+  // The team a manager controls (null for owner/admin/viewer).
+  team_id?: string | null;
   joined_at: string;
 }
 
