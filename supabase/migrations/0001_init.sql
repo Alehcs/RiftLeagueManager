@@ -5,7 +5,9 @@
 -- Mock mode needs none of this; this is the production/shared-DB path.
 -- ===========================================================================
 
-create extension if not exists "pgcrypto";
+-- pgcrypto powers digest(); on Supabase it lives in the dedicated extensions schema.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 -- profiles -------------------------------------------------------------------
 create table if not exists profiles (
@@ -279,7 +281,7 @@ alter table leagues add column if not exists room_code text;
 alter table leagues add column if not exists admin_code_hash text;
 create unique index if not exists leagues_room_code_idx on leagues(room_code);
 update leagues
-set room_code = upper(substr(encode(digest(id::text, 'sha256'), 'hex'), 1, 8))
+set room_code = upper(substr(encode(extensions.digest(id::text, 'sha256'), 'hex'), 1, 8))
 where room_code is null;
 alter table leagues alter column room_code set not null;
 alter table league_admins alter column user_id drop not null;
@@ -501,7 +503,7 @@ begin
   select id into target_league_id
   from public.leagues
   where room_code = upper(trim(target_room_code))
-    and admin_code_hash = encode(public.digest(recovery_code, 'sha256'), 'hex');
+    and admin_code_hash = encode(extensions.digest(recovery_code, 'sha256'), 'hex');
 
   if target_league_id is null then return null; end if;
 
