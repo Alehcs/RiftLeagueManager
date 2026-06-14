@@ -251,7 +251,7 @@ export class SupabaseAdapter implements DataAdapter {
           ? await this.client.from('leagues').select('id, name, slug, region, tier, season, logo_url, external_url, source_name, source_url, format, owner_guest_id, owner_user_id, room_code, is_seed, last_imported_at, created_at, updated_at').range(from, from + pageSize - 1)
           : await this.client.from(table).select('*').range(from, from + pageSize - 1);
       const { data, error } = response;
-      if (error) throw new Error(`Unable to load ${table}: ${error.message}`);
+      if (error) throw new Error(dbError('load', table, error.message));
       const page = (data ?? []).map((row) => fromSupabaseRow(table, row as unknown as Record<string, unknown>));
       rows.push(...page);
       if (page.length < pageSize) break;
@@ -262,7 +262,7 @@ export class SupabaseAdapter implements DataAdapter {
   private async deleteRows(table: TableName, ids: string[]): Promise<void> {
     for (const batch of chunks(ids, 200)) {
       const { error } = await this.client.from(table).delete().in('id', batch);
-      if (error) throw new Error(`Unable to delete ${table}: ${error.message}`);
+      if (error) throw new Error(dbError('delete', table, error.message));
     }
   }
 
@@ -270,7 +270,7 @@ export class SupabaseAdapter implements DataAdapter {
     for (const batch of chunks(rows, 200)) {
       const payload = await Promise.all(batch.map((row) => this.toSupabaseRow(table, row)));
       const { error } = await this.client.from(table).upsert(payload, { onConflict: 'id' });
-      if (error) throw new Error(`Unable to save ${table}: ${error.message}`);
+      if (error) throw new Error(dbError('save', table, error.message));
     }
   }
 
@@ -444,6 +444,16 @@ function chunks<T>(items: T[], size: number): T[][] {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+// Surface the exact Postgres message, with an actionable hint when the roles
+// are missing table grants (re-run the migration).
+function dbError(action: string, table: TableName, message: string): string {
+  const base = `Unable to ${action} ${table}: ${message}`;
+  if (/permission denied/i.test(message)) {
+    return `${base}. Re-run supabase/migrations/0001_init.sql to grant the anon/authenticated roles table access.`;
+  }
+  return base;
 }
 
 async function sha256(value: string): Promise<string> {
