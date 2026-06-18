@@ -242,6 +242,40 @@ create table if not exists transfer_history (
   created_at timestamptz not null default now()
 );
 
+-- league runs + market offers + shared simulations ---------------------------
+create table if not exists market_offers (
+  id uuid primary key default gen_random_uuid(),
+  league_id uuid not null references leagues(id) on delete cascade,
+  player_id uuid not null references players(id) on delete cascade,
+  team_id uuid not null references teams(id) on delete cascade,
+  offered_by_guest_id uuid not null references guest_sessions(id) on delete cascade,
+  transfer_fee bigint not null default 0 check (transfer_fee >= 0),
+  salary bigint not null default 0 check (salary >= 0),
+  role_promise text not null check (role_promise in ('starter','rotation','development')),
+  status text not null default 'active' check (status in ('active','accepted','rejected','expired','cancelled')),
+  submitted_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  resolved_at timestamptz
+);
+create index if not exists market_offers_league_idx on market_offers(league_id);
+create index if not exists market_offers_player_idx on market_offers(player_id, status);
+
+create table if not exists match_simulations (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null unique references matches(id) on delete cascade,
+  league_id uuid not null references leagues(id) on delete cascade,
+  simulation_seed text not null,
+  status text not null default 'pending' check (status in ('pending','running','completed')),
+  started_by_guest_id uuid not null references guest_sessions(id) on delete restrict,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  event_timeline jsonb not null default '[]'::jsonb,
+  final_result jsonb not null default '{}'::jsonb,
+  player_stats jsonb not null default '[]'::jsonb,
+  team_stats jsonb not null default '{}'::jsonb
+);
+create index if not exists match_simulations_league_idx on match_simulations(league_id);
+
 -- import + audit -------------------------------------------------------------
 create table if not exists import_sources (
   id uuid primary key default gen_random_uuid(),
@@ -292,6 +326,51 @@ alter table league_members add column if not exists team_id uuid;
 alter table trades add column if not exists proposed_by_guest_id uuid references guest_sessions(id) on delete set null;
 alter table trades add column if not exists reviewed_by_guest_id uuid references guest_sessions(id) on delete set null;
 alter table audit_logs add column if not exists actor_guest_id uuid references guest_sessions(id) on delete set null;
+alter table leagues add column if not exists run_phase text not null default 'lobby';
+alter table leagues add column if not exists starting_budget bigint not null default 5000000;
+alter table leagues add column if not exists preparation_weeks int not null default 3;
+alter table leagues add column if not exists bot_teams_enabled boolean not null default false;
+alter table leagues add column if not exists bot_team_count int not null default 0;
+alter table leagues add column if not exists friendlies_affect_development boolean not null default true;
+alter table leagues add column if not exists market_rules text not null default 'Open offers during preseason and between official weeks.';
+alter table leagues add column if not exists free_agent_offer_window_hours int not null default 24;
+alter table leagues add column if not exists current_run_week int not null default 0;
+alter table leagues add column if not exists run_seed text;
+alter table leagues add column if not exists run_started_at timestamptz;
+alter table leagues add column if not exists run_completed_at timestamptz;
+alter table leagues drop constraint if exists leagues_run_phase_check;
+alter table leagues add constraint leagues_run_phase_check check (run_phase in (
+  'lobby','team_selection','roster_reveal','preseason_week_1','preseason_week_2','preseason_week_3','regular_season','playoffs','completed'
+));
+alter table leagues drop constraint if exists leagues_preparation_weeks_check;
+alter table leagues add constraint leagues_preparation_weeks_check check (preparation_weeks between 1 and 3);
+alter table leagues drop constraint if exists leagues_bot_team_count_check;
+alter table leagues add constraint leagues_bot_team_count_check check (bot_team_count >= 0);
+alter table leagues drop constraint if exists leagues_offer_window_check;
+alter table leagues add constraint leagues_offer_window_check check (free_agent_offer_window_hours >= 1);
+
+alter table teams add column if not exists is_bot boolean not null default false;
+alter table teams add column if not exists bot_manager_name text;
+alter table teams add column if not exists run_active boolean not null default true;
+alter table teams add column if not exists morale int not null default 50;
+alter table teams add column if not exists synergy int not null default 50;
+alter table teams drop constraint if exists teams_morale_check;
+alter table teams add constraint teams_morale_check check (morale between 0 and 100);
+alter table teams drop constraint if exists teams_synergy_check;
+alter table teams add constraint teams_synergy_check check (synergy between 0 and 100);
+
+alter table players add column if not exists category text;
+alter table players add column if not exists potential int;
+alter table players add column if not exists hidden_until_reveal boolean not null default false;
+alter table players drop constraint if exists players_category_check;
+alter table players add constraint players_category_check check (category is null or category in ('Rookie','Prospect','Starter','Pro','Star','Superstar','Legend'));
+alter table players drop constraint if exists players_potential_check;
+alter table players add constraint players_potential_check check (potential is null or potential between 0 and 99);
+
+alter table matches drop constraint if exists matches_stage_check;
+alter table matches add constraint matches_stage_check check (stage in ('friendly','regular_season','playoffs','final','group_stage','swiss'));
+create unique index if not exists league_members_unique_managed_team_idx
+  on league_members(league_id, team_id) where role = 'manager' and team_id is not null;
 
 -- Realtime: add the live tables to the supabase_realtime publication.
 do $$
@@ -300,7 +379,7 @@ begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     foreach t in array array[
       'matches','games','teams','players','coaches','trades','trade_items',
-      'transfer_history','audit_logs','league_members'
+      'transfer_history','market_offers','match_simulations','audit_logs','league_members'
     ] loop
       if not exists (
         select 1 from pg_publication_tables
@@ -380,7 +459,7 @@ declare t text;
 begin
   foreach t in array array[
     'profiles','guest_sessions','leagues','league_admins','league_members','teams','players','coaches','matches','games',
-    'trades','trade_items','transfer_history','import_sources','import_jobs','audit_logs'
+    'trades','trade_items','transfer_history','market_offers','match_simulations','import_sources','import_jobs','audit_logs'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists "public read" on %I', t);
@@ -422,6 +501,12 @@ drop policy if exists "trade items manager write" on trade_items;
 drop policy if exists "transfer history write" on transfer_history;
 drop policy if exists "transfer history admin write" on transfer_history;
 drop policy if exists "transfer history manager write" on transfer_history;
+drop policy if exists "market offers admin write" on market_offers;
+drop policy if exists "market offers manager write" on market_offers;
+drop policy if exists "match simulations admin write" on match_simulations;
+drop policy if exists "match simulations friendly write" on match_simulations;
+drop policy if exists "matches friendly manager write" on matches;
+drop policy if exists "games friendly manager write" on games;
 drop policy if exists "audit logs insert" on audit_logs;
 drop policy if exists "audit logs write" on audit_logs;
 drop policy if exists "import sources write" on import_sources;
@@ -511,6 +596,14 @@ create policy "public read" on matches for select using (true);
 create policy "matches write" on matches for all to authenticated
   using (public.has_league_role(league_id, array['owner','admin']))
   with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "matches friendly manager write" on matches for all to authenticated
+  using (stage = 'friendly' and (public.manages_team(blue_team_id) or public.manages_team(red_team_id)))
+  with check (
+    stage = 'friendly'
+    and (public.manages_team(blue_team_id) or public.manages_team(red_team_id))
+    and exists (select 1 from teams where id = blue_team_id and league_id = matches.league_id)
+    and exists (select 1 from teams where id = red_team_id and league_id = matches.league_id)
+  );
 
 create policy "public read" on games for select using (true);
 create policy "games write" on games for all to authenticated
@@ -521,6 +614,15 @@ create policy "games write" on games for all to authenticated
   with check (exists (
     select 1 from matches where matches.id = games.match_id
       and public.has_league_role(matches.league_id, array['owner','admin'])
+  ));
+create policy "games friendly manager write" on games for all to authenticated
+  using (exists (
+    select 1 from matches where matches.id = games.match_id and matches.stage = 'friendly'
+      and (public.manages_team(matches.blue_team_id) or public.manages_team(matches.red_team_id))
+  ))
+  with check (exists (
+    select 1 from matches where matches.id = games.match_id and matches.stage = 'friendly'
+      and (public.manages_team(matches.blue_team_id) or public.manages_team(matches.red_team_id))
   ));
 
 -- Trades: owner/admin full; a manager may write trades involving their team
@@ -560,6 +662,33 @@ create policy "transfer history admin write" on transfer_history for all to auth
 create policy "transfer history manager write" on transfer_history for all to authenticated
   using (public.manages_team(from_team_id) or public.manages_team(to_team_id))
   with check (public.manages_team(from_team_id) or public.manages_team(to_team_id));
+
+create policy "public read" on market_offers for select using (true);
+create policy "market offers admin write" on market_offers for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "market offers manager write" on market_offers for all to authenticated
+  using (offered_by_guest_id = public.current_guest_id() and public.manages_team(team_id))
+  with check (
+    offered_by_guest_id = public.current_guest_id()
+    and public.manages_team(team_id)
+    and exists (select 1 from teams where id = market_offers.team_id and league_id = market_offers.league_id)
+    and exists (select 1 from players where id = market_offers.player_id and league_id = market_offers.league_id and team_id is null)
+  );
+
+create policy "public read" on match_simulations for select using (true);
+create policy "match simulations admin write" on match_simulations for all to authenticated
+  using (public.has_league_role(league_id, array['owner','admin']))
+  with check (public.has_league_role(league_id, array['owner','admin']));
+create policy "match simulations friendly write" on match_simulations for all to authenticated
+  using (exists (
+    select 1 from matches where matches.id = match_simulations.match_id and matches.stage = 'friendly'
+      and (public.manages_team(matches.blue_team_id) or public.manages_team(matches.red_team_id))
+  ))
+  with check (started_by_guest_id = public.current_guest_id() and exists (
+    select 1 from matches where matches.id = match_simulations.match_id and matches.league_id = match_simulations.league_id and matches.stage = 'friendly'
+      and (public.manages_team(matches.blue_team_id) or public.manages_team(matches.red_team_id))
+  ));
 
 create policy "public read" on audit_logs for select using (true);
 create policy "audit logs write" on audit_logs for all to authenticated
@@ -635,6 +764,12 @@ begin
   if not exists (select 1 from public.teams where id = target_team_id and league_id = target_league_id) then
     raise exception 'Team not found in this league';
   end if;
+  if not exists (select 1 from public.leagues where id = target_league_id and run_phase = 'team_selection') then
+    raise exception 'Teams can only be claimed during team selection';
+  end if;
+  if exists (select 1 from public.teams where id = target_team_id and is_bot) then
+    raise exception 'That team is assigned to a bot';
+  end if;
   if not exists (select 1 from public.league_members where league_id = target_league_id and guest_id = target_guest_id)
      and not exists (select 1 from public.leagues where id = target_league_id and owner_guest_id = target_guest_id) then
     raise exception 'Join the league before claiming a team';
@@ -644,6 +779,13 @@ begin
     where league_id = target_league_id and team_id = target_team_id and role = 'manager' and guest_id <> target_guest_id
   ) then
     raise exception 'That team already has a manager';
+  end if;
+  if exists (
+    select 1 from public.league_members
+    where league_id = target_league_id and guest_id = target_guest_id and role = 'manager'
+      and team_id is distinct from target_team_id
+  ) then
+    raise exception 'You already manage another team in this league';
   end if;
   insert into public.league_members (league_id, guest_id, role, team_id)
   values (target_league_id, target_guest_id, 'manager', target_team_id)
@@ -721,5 +863,8 @@ grant select (id, display_name, avatar_color, created_at, last_seen_at) on guest
 revoke select on leagues from anon, authenticated;
 grant select (
   id, name, slug, region, tier, season, logo_url, external_url, source_name, source_url,
-  format, owner_user_id, owner_guest_id, room_code, is_seed, last_imported_at, created_at, updated_at
+  format, owner_user_id, owner_guest_id, room_code, is_seed, last_imported_at,
+  run_phase, starting_budget, preparation_weeks, bot_teams_enabled, bot_team_count,
+  friendlies_affect_development, market_rules, free_agent_offer_window_hours,
+  current_run_week, run_seed, run_started_at, run_completed_at, created_at, updated_at
 ) on leagues to anon, authenticated;

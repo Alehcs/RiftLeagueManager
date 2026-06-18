@@ -32,7 +32,7 @@ export type LeagueFormat =
 export type PlayerStatus = 'active' | 'benched' | 'free_agent' | 'retired';
 export type CoachStatus = 'active' | 'free_agent' | 'retired';
 
-export type MatchStage = 'regular_season' | 'playoffs' | 'final' | 'group_stage' | 'swiss';
+export type MatchStage = 'friendly' | 'regular_season' | 'playoffs' | 'final' | 'group_stage' | 'swiss';
 export type MatchFormat = 'BO1' | 'BO3' | 'BO5';
 export type MatchStatus = 'scheduled' | 'live' | 'completed';
 
@@ -40,6 +40,22 @@ export type TradeStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
 export type TransferType = 'signing' | 'release' | 'trade' | 'sale';
 
 export type AdminRole = 'owner' | 'admin' | 'manager' | 'viewer';
+
+export type LeagueRunPhase =
+  | 'lobby'
+  | 'team_selection'
+  | 'roster_reveal'
+  | 'preseason_week_1'
+  | 'preseason_week_2'
+  | 'preseason_week_3'
+  | 'regular_season'
+  | 'playoffs'
+  | 'completed';
+
+export type PlayerCategory = 'Rookie' | 'Prospect' | 'Starter' | 'Pro' | 'Star' | 'Superstar' | 'Legend';
+export type MarketOfferStatus = 'active' | 'accepted' | 'rejected' | 'expired' | 'cancelled';
+export type RolePromise = 'starter' | 'rotation' | 'development';
+export type SimulationStatus = 'pending' | 'running' | 'completed';
 
 export type ImportType =
   | 'league'
@@ -86,6 +102,18 @@ export interface League {
   room_code: string;
   admin_code_hash: string | null;
   owner_user_id?: string | null;
+  run_phase?: LeagueRunPhase;
+  starting_budget?: number;
+  preparation_weeks?: number;
+  bot_teams_enabled?: boolean;
+  bot_team_count?: number;
+  friendlies_affect_development?: boolean;
+  market_rules?: string;
+  free_agent_offer_window_hours?: number;
+  current_run_week?: number;
+  run_seed?: string | null;
+  run_started_at?: string | null;
+  run_completed_at?: string | null;
   // demo / generated flag
   is_seed?: boolean;
   last_imported_at?: string | null;
@@ -134,6 +162,11 @@ export interface Team {
   points: number;
   form: string; // e.g. "WWLWL" most-recent-first
   generated?: boolean; // true when values were plausibly synthesized
+  is_bot?: boolean;
+  bot_manager_name?: string | null;
+  run_active?: boolean;
+  morale?: number;
+  synergy?: number;
   created_at: string;
   updated_at: string;
 }
@@ -161,6 +194,9 @@ export interface Player {
   rating_macro: number;
   rating_mechanics: number;
   rating_consistency: number;
+  category?: PlayerCategory;
+  potential?: number;
+  hidden_until_reveal?: boolean;
   status: PlayerStatus;
   generated?: boolean;
   created_at: string;
@@ -303,6 +339,36 @@ export interface AuditLog {
   created_at: string;
 }
 
+export interface MarketOffer {
+  id: string;
+  league_id: string;
+  player_id: string;
+  team_id: string;
+  offered_by_guest_id: string;
+  transfer_fee: number;
+  salary: number;
+  role_promise: RolePromise;
+  status: MarketOfferStatus;
+  submitted_at: string;
+  expires_at: string;
+  resolved_at: string | null;
+}
+
+export interface MatchSimulation {
+  id: string;
+  match_id: string;
+  league_id: string;
+  simulation_seed: string;
+  status: SimulationStatus;
+  started_by_guest_id: string;
+  started_at: string;
+  completed_at: string | null;
+  event_timeline: string;
+  final_result: string;
+  player_stats: string;
+  team_stats: string;
+}
+
 // ---------------------------------------------------------------------------
 // The full in-memory database shape (also the JSON export/import shape).
 // ---------------------------------------------------------------------------
@@ -320,6 +386,8 @@ export interface Database {
   trades: Trade[];
   trade_items: TradeItem[];
   transfer_history: TransferRecord[];
+  market_offers: MarketOffer[];
+  match_simulations: MatchSimulation[];
   import_sources: ImportSource[];
   import_jobs: ImportJob[];
   audit_logs: AuditLog[];
@@ -339,6 +407,8 @@ export const EMPTY_DB: Database = {
   trades: [],
   trade_items: [],
   transfer_history: [],
+  market_offers: [],
+  match_simulations: [],
   import_sources: [],
   import_jobs: [],
   audit_logs: [],
@@ -357,4 +427,6 @@ export interface LeagueExport {
   trades: Trade[];
   trade_items: TradeItem[];
   transfer_history: TransferRecord[];
+  market_offers?: MarketOffer[];
+  match_simulations?: MatchSimulation[];
 }
