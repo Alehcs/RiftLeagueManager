@@ -2,8 +2,9 @@
 
 import { Badge } from '@/components/ui/primitives';
 import { FORMAT_META, REGION_META, TIER_META, regionBadge } from '@/lib/constants';
-import type { LeagueFormat, LeagueTier, MatchStatus, PlayerStatus } from '@/lib/types';
+import type { LeagueFormat, LeagueRunPhase, LeagueTier, MatchStatus, PlayerCategory, PlayerStatus } from '@/lib/types';
 import { Sparkles } from 'lucide-react';
+import { RUN_PHASE_LABELS } from '@/services/run';
 
 export function TierBadge({ tier }: { tier: LeagueTier }) {
   const m = TIER_META[tier];
@@ -41,6 +42,19 @@ export function PlayerStatusBadge({ status }: { status: PlayerStatus }) {
     retired: { c: '#64748b', t: 'Retired' },
   };
   return <Badge color={map[status].c}>{map[status].t}</Badge>;
+}
+
+export function RunPhaseBadge({ phase }: { phase: LeagueRunPhase }) {
+  const color = phase === 'completed' ? '#c8a85a' : phase === 'regular_season' || phase === 'playoffs' ? '#22c55e' : '#26d0ce';
+  return <Badge color={color}>{RUN_PHASE_LABELS[phase]}</Badge>;
+}
+
+export function PlayerCategoryBadge({ category }: { category: PlayerCategory }) {
+  const colors: Record<PlayerCategory, string> = {
+    Rookie: '#64748b', Prospect: '#3b82f6', Starter: '#22c55e', Pro: '#26d0ce',
+    Star: '#8b5cf6', Superstar: '#c8a85a', Legend: '#ef4444',
+  };
+  return <Badge color={colors[category]}>{category}</Badge>;
 }
 
 // Marks plausibly-generated data so it is clearly distinguishable from real.

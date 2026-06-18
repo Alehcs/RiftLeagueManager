@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { Users, Swords, ChevronRight } from 'lucide-react';
 import type { League } from '@/lib/types';
 import { TeamLogo } from '@/components/ui/image';
-import { TierBadge, RegionBadge, FormatBadge } from '@/components/common/badges';
+import { TierBadge, RegionBadge, FormatBadge, RunPhaseBadge } from '@/components/common/badges';
+import { runPhase } from '@/services/run';
 import { Card } from '@/components/ui/primitives';
 import { useDb } from '@/lib/store/hooks';
 import { teamsOf, playersOf, matchesOf } from '@/lib/store/selectors';
@@ -18,7 +19,7 @@ export function LeagueCard({ league }: { league: League }) {
   const progress = matches.length ? Math.round((completed / matches.length) * 100) : 0;
 
   return (
-    <Link href={`/leagues/${league.id}`}>
+    <Link href={`/leagues/${league.id}/lobby`}>
       <Card hover className="group h-full overflow-hidden">
         <div className="relative h-20 bg-gradient-to-br from-bg-elevated to-bg-soft">
           <div
@@ -54,7 +55,7 @@ export function LeagueCard({ league }: { league: League }) {
           <div className="mt-3">
             <div className="mb-1 flex justify-between text-[10px] text-slate-500">
               <FormatBadge format={league.format} />
-              <span>{progress}% played</span>
+              <RunPhaseBadge phase={runPhase(league)} />
             </div>
             <div className="h-1 overflow-hidden rounded-full bg-bg-soft">
               <div className="h-full rounded-full bg-rift-cyan/80" style={{ width: `${progress}%` }} />

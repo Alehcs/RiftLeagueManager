@@ -10,8 +10,10 @@ import type {
   ImportJob,
   League,
   LeagueFormat,
+  MarketOffer,
   Match,
   Player,
+  RolePromise,
   Role,
   Team,
   TradeStatus,
@@ -37,6 +39,17 @@ import { roleInLeague, managedTeamId as managedTeamIdSel } from './selectors';
 import { generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
 import { buildLeagueExport, reidLeagueExport, isLeagueExport } from '@/services/leagueIO';
 import { normalizeRole, num, toObjects } from '@/services/csv';
+import {
+  botManagerName,
+  buildSimulation,
+  generateFreeAgents,
+  generateRunSquad,
+  isPreseason,
+  nextRunPhase,
+  offerScore,
+  playerCategory,
+  runPhase,
+} from '@/services/run';
 
 export interface Toast {
   id: string;
@@ -89,11 +102,15 @@ interface StoreState {
   deleteLeague: (id: string) => void;
   resetLeagueResults: (id: string) => void;
   regenerateSchedule: (id: string, format?: LeagueFormat) => void;
+  updateRunSetup: (leagueId: string, patch: Partial<Pick<League, 'starting_budget' | 'preparation_weeks' | 'bot_teams_enabled' | 'bot_team_count' | 'format' | 'friendlies_affect_development' | 'market_rules' | 'free_agent_offer_window_hours'>>) => void;
+  advanceRunPhase: (leagueId: string) => void;
+  startRun: (leagueId: string) => void;
 
   // teams
   createTeam: (leagueId: string, input: Partial<Team> & { name: string; short_name: string }) => string;
   updateTeam: (id: string, patch: Partial<Team>) => void;
   deleteTeam: (id: string) => void;
+  setBotTeam: (teamId: string, enabled: boolean) => void;
 
   // players
   createPlayer: (leagueId: string, input: Partial<Player> & { nickname: string; role: Role }) => string;
@@ -119,6 +136,7 @@ interface StoreState {
   simulateRegularSeason: (leagueId: string) => void;
   simulatePlayoffs: (leagueId: string) => void;
   simulateFullTournament: (leagueId: string) => void;
+  playFriendly: (leagueId: string, opponentTeamId: string) => void;
 
   // playoffs
   generatePlayoffs: (leagueId: string, opts: { type: 'single' | 'double'; size: number }) => void;
@@ -134,6 +152,11 @@ interface StoreState {
     moneyToTeam: number;
   }) => string;
   setTradeStatus: (tradeId: string, status: TradeStatus) => void;
+
+  // free-agent offers
+  submitMarketOffer: (input: { leagueId: string; playerId: string; teamId: string; transferFee: number; salary: number; rolePromise: RolePromise }) => string;
+  cancelMarketOffer: (offerId: string) => void;
+  resolveMarketOffers: (leagueId: string, force?: boolean) => void;
 
   // admins
   setLeagueAdmin: (leagueId: string, guestId: string, role: AdminRole, teamId?: string | null) => void;
@@ -283,21 +306,78 @@ export const useStore = create<StoreState>((set, get) => {
   const teamShort = (teamId: string | null) =>
     get().db.teams.find((t) => t.id === teamId)?.short_name ?? '—';
 
+  const resolveOffersInDb = (leagueId: string, force = false) => {
+    const db = get().db;
+    const league = db.leagues.find((item) => item.id === leagueId);
+    if (!league) return 0;
+    const now = Date.now();
+    const candidates = db.market_offers.filter(
+      (offer) => offer.league_id === leagueId && offer.status === 'active' && (force || +new Date(offer.expires_at) <= now),
+    );
+    const playerIds = [...new Set(candidates.map((offer) => offer.player_id))];
+    let resolved = 0;
+    for (const playerId of playerIds) {
+      const player = db.players.find((item) => item.id === playerId && !item.team_id);
+      const offers = candidates.filter((offer) => offer.player_id === playerId);
+      if (!player) {
+        offers.forEach((offer) => { offer.status = 'expired'; offer.resolved_at = nowISO(); });
+        continue;
+      }
+      const viable = offers
+        .map((offer) => ({ offer, team: db.teams.find((team) => team.id === offer.team_id) }))
+        .filter((entry): entry is { offer: MarketOffer; team: Team } => !!entry.team && entry.team.budget >= entry.offer.transfer_fee)
+        .sort((a, b) => offerScore(b.offer, player, b.team, league.run_seed ?? league.id) - offerScore(a.offer, player, a.team, league.run_seed ?? league.id));
+      const winner = viable[0];
+      if (!winner) {
+        offers.forEach((offer) => { offer.status = 'expired'; offer.resolved_at = nowISO(); });
+        continue;
+      }
+      winner.team.budget -= winner.offer.transfer_fee;
+      winner.team.updated_at = nowISO();
+      player.team_id = winner.team.id;
+      player.salary = winner.offer.salary;
+      player.status = winner.offer.role_promise === 'starter' ? 'active' : 'benched';
+      player.updated_at = nowISO();
+      offers.forEach((offer) => {
+        offer.status = offer.id === winner.offer.id ? 'accepted' : 'rejected';
+        offer.resolved_at = nowISO();
+      });
+      db.transfer_history.push({
+        id: uid('transfer'), league_id: leagueId, player_id: player.id, from_team_id: null,
+        to_team_id: winner.team.id, transfer_type: 'signing', amount: winner.offer.transfer_fee, created_at: nowISO(),
+      });
+      resolved++;
+    }
+    return resolved;
+  };
+
   // Apply a single match result + advance bracket links + create games.
-  const playMatch = (m: Match, makeGames = true) => {
+  const playMatch = (m: Match, makeGames = true, deferCompletion = false) => {
     const db = get().db;
     if (!m.blue_team_id || !m.red_team_id) return;
+    const existingSimulation = db.match_simulations.find((simulation) => simulation.match_id === m.id && simulation.status === 'completed');
+    if (existingSimulation && m.status === 'completed') return;
+    if (db.match_simulations.some((simulation) => simulation.match_id === m.id && simulation.status === 'running')) return;
+    const blueTeam = db.teams.find((team) => team.id === m.blue_team_id);
+    const redTeam = db.teams.find((team) => team.id === m.red_team_id);
+    if (!blueTeam || !redTeam) return;
     const blue = strengthOf(m.blue_team_id);
     const red = strengthOf(m.red_team_id);
+    const seed = `${m.id}:${uid('seed')}`;
     const res = simMatch(m.format, blue, red, {
       blueName: teamShort(m.blue_team_id),
       redName: teamShort(m.red_team_id),
-      seed: m.id + ':' + Date.now(),
+      seed,
     });
-    m.status = 'completed';
-    m.blue_score = res.blue_score;
-    m.red_score = res.red_score;
-    m.winner_team_id = res.winner === 'blue' ? m.blue_team_id : m.red_team_id;
+    db.match_simulations = db.match_simulations.filter((simulation) => simulation.match_id !== m.id);
+    const simulation = buildSimulation(m.league_id, m, res, blueTeam, redTeam, get().currentGuestId, seed, db.players);
+    simulation.status = deferCompletion ? 'running' : 'completed';
+    simulation.completed_at = deferCompletion ? null : nowISO();
+    db.match_simulations.push(simulation);
+    m.status = deferCompletion ? 'live' : 'completed';
+    m.blue_score = deferCompletion ? 0 : res.blue_score;
+    m.red_score = deferCompletion ? 0 : res.red_score;
+    m.winner_team_id = deferCompletion ? null : res.winner === 'blue' ? m.blue_team_id : m.red_team_id;
     m.updated_at = nowISO();
     // games
     db.games = db.games.filter((g) => g.match_id !== m.id);
@@ -319,7 +399,38 @@ export const useStore = create<StoreState>((set, get) => {
         });
       }
     }
-    advanceBracket(m);
+    if (!deferCompletion && m.stage === 'friendly') {
+      const league = db.leagues.find((item) => item.id === m.league_id);
+      if (league?.friendlies_affect_development) {
+        const winner = db.teams.find((team) => team.id === m.winner_team_id);
+        const loser = db.teams.find((team) => team.id === (m.winner_team_id === m.blue_team_id ? m.red_team_id : m.blue_team_id));
+        const role = roleOf(m.league_id);
+        const editableTeam = role === 'owner' || role === 'admin' ? null : managedTeamOf(m.league_id);
+        if (winner && (!editableTeam || winner.id === editableTeam)) {
+          winner.morale = Math.min(100, (winner.morale ?? 50) + 3);
+          winner.synergy = Math.min(100, (winner.synergy ?? 50) + 2);
+        }
+        if (loser && (!editableTeam || loser.id === editableTeam)) loser.synergy = Math.min(100, (loser.synergy ?? 50) + 1);
+      }
+    }
+    if (!deferCompletion) advanceBracket(m);
+  };
+
+  const finishMatchSimulation = (matchId: string) => {
+    const db = get().db;
+    const match = db.matches.find((item) => item.id === matchId);
+    const simulation = db.match_simulations.find((item) => item.match_id === matchId && item.status === 'running');
+    if (!match || !simulation) return;
+    const result = JSON.parse(simulation.final_result) as { winner_team_id: string; blue_score: number; red_score: number };
+    match.status = 'completed';
+    match.winner_team_id = result.winner_team_id;
+    match.blue_score = result.blue_score;
+    match.red_score = result.red_score;
+    match.updated_at = nowISO();
+    simulation.status = 'completed';
+    simulation.completed_at = nowISO();
+    advanceBracket(match);
+    recomputeStandings(match.league_id);
   };
 
   const advanceBracket = (m: Match) => {
@@ -502,6 +613,18 @@ export const useStore = create<StoreState>((set, get) => {
         owner_guest_id: get().currentGuestId,
         room_code: roomCode,
         admin_code_hash: input.adminCode?.trim() ? `plain:${input.adminCode.trim()}` : null,
+        run_phase: 'lobby',
+        starting_budget: input.starting_budget ?? 5_000_000,
+        preparation_weeks: input.preparation_weeks ?? 3,
+        bot_teams_enabled: input.bot_teams_enabled ?? false,
+        bot_team_count: input.bot_team_count ?? 0,
+        friendlies_affect_development: input.friendlies_affect_development ?? true,
+        market_rules: input.market_rules ?? 'Open offers during preseason and between official weeks.',
+        free_agent_offer_window_hours: input.free_agent_offer_window_hours ?? 24,
+        current_run_week: 0,
+        run_seed: null,
+        run_started_at: null,
+        run_completed_at: null,
         is_seed: false,
         last_imported_at: null,
         created_at: ts,
@@ -630,6 +753,8 @@ export const useStore = create<StoreState>((set, get) => {
           db.trades = db.trades.filter((t) => t.league_id !== id);
           db.trade_items = db.trade_items.filter((ti) => !tradeIds.has(ti.trade_id));
           db.transfer_history = db.transfer_history.filter((th) => th.league_id !== id);
+          db.market_offers = db.market_offers.filter((offer) => offer.league_id !== id);
+          db.match_simulations = db.match_simulations.filter((simulation) => simulation.league_id !== id);
         },
         { toast: { kind: 'info', message: `Deleted "${name}"` } },
       );
@@ -643,6 +768,7 @@ export const useStore = create<StoreState>((set, get) => {
           const leagueMatches = db.matches.filter((m) => m.league_id === id);
           const ids = new Set(leagueMatches.map((m) => m.id));
           db.games = db.games.filter((g) => !ids.has(g.match_id));
+          db.match_simulations = db.match_simulations.filter((simulation) => simulation.league_id !== id);
           for (const m of leagueMatches) {
             // bracket matches: clear advanced participants too
             const isBracket = !['regular_season', 'group_stage', 'swiss'].includes(m.stage);
@@ -673,7 +799,7 @@ export const useStore = create<StoreState>((set, get) => {
           const league = db.leagues.find((l) => l.id === id);
           if (!league) return;
           if (format) league.format = format;
-          const teams = db.teams.filter((t) => t.league_id === id);
+          const teams = db.teams.filter((t) => t.league_id === id && t.run_active !== false);
           const oldIds = new Set(db.matches.filter((m) => m.league_id === id).map((m) => m.id));
           db.games = db.games.filter((g) => !oldIds.has(g.match_id));
           db.matches = db.matches.filter((m) => m.league_id !== id);
@@ -683,6 +809,120 @@ export const useStore = create<StoreState>((set, get) => {
         },
         { toast: { kind: 'success', message: 'Schedule regenerated' } },
       );
+    },
+
+    updateRunSetup(leagueId, patch) {
+      if (!requireAdmin(leagueId, 'configure the run')) return;
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      if (!league || !['lobby', 'team_selection'].includes(runPhase(league))) {
+        reportError(new Error('Run setup is locked after the roster reveal starts.'));
+        return;
+      }
+      const safePatch = {
+        ...patch,
+        preparation_weeks: patch.preparation_weeks == null ? undefined : Math.max(1, Math.min(3, patch.preparation_weeks)),
+        bot_team_count: patch.bot_team_count == null ? undefined : Math.max(0, patch.bot_team_count),
+        free_agent_offer_window_hours: patch.free_agent_offer_window_hours == null ? undefined : Math.max(1, patch.free_agent_offer_window_hours),
+      };
+      Object.keys(safePatch).forEach((key) => safePatch[key as keyof typeof safePatch] === undefined && delete safePatch[key as keyof typeof safePatch]);
+      commit(() => {
+        const target = get().db.leagues.find((item) => item.id === leagueId);
+        if (target) Object.assign(target, safePatch, { updated_at: nowISO() });
+      }, { toast: { kind: 'success', message: 'Run setup saved' } });
+    },
+
+    advanceRunPhase(leagueId) {
+      if (!requireAdmin(leagueId, 'advance the run')) return;
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      if (!league) return;
+      if (runPhase(league) === 'team_selection') {
+        get().startRun(leagueId);
+        return;
+      }
+      const next = nextRunPhase(league);
+      commit(() => {
+        const db = get().db;
+        const target = db.leagues.find((item) => item.id === leagueId);
+        if (!target) return;
+        if (isPreseason(runPhase(target))) resolveOffersInDb(leagueId, true);
+        target.run_phase = next;
+        target.current_run_week = next.startsWith('preseason_week_') ? Number(next.slice(-1)) : next === 'regular_season' ? 1 : target.current_run_week ?? 0;
+        if (next === 'playoffs' && !db.matches.some((match) => match.league_id === leagueId && ['playoffs', 'final'].includes(match.stage))) {
+          const activeTeams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
+          const table = standingsTable(activeTeams, db.matches.filter((match) => match.league_id === leagueId));
+          const bracketSize = activeTeams.length >= 8 ? 8 : activeTeams.length >= 4 ? 4 : 2;
+          const seeds = table.slice(0, bracketSize).map((row) => row.team.id);
+          if (seeds.length >= 2) db.matches.push(...generateSingleElim(leagueId, seeds, 'BO5', new Date()));
+        }
+        if (runPhase(target) !== 'roster_reveal') {
+          db.players.filter((player) => player.league_id === leagueId).forEach((player) => { player.hidden_until_reveal = false; });
+        }
+        if (next === 'completed') target.run_completed_at = nowISO();
+        target.updated_at = nowISO();
+      }, { toast: { kind: 'success', message: `Run advanced to ${next.replaceAll('_', ' ')}` } });
+    },
+
+    startRun(leagueId) {
+      if (!requireAdmin(leagueId, 'start the run')) return;
+      const db0 = get().db;
+      const league0 = db0.leagues.find((item) => item.id === leagueId);
+      if (!league0 || runPhase(league0) !== 'team_selection') {
+        reportError(new Error('Move the league to team selection before starting the run.'));
+        return;
+      }
+      const managedIds = new Set(
+        db0.league_members.filter((member) => member.league_id === leagueId && member.role === 'manager' && member.team_id).map((member) => member.team_id as string),
+      );
+      const teams = db0.teams.filter((team) => team.league_id === leagueId);
+      const desiredBots = league0.bot_teams_enabled ? Math.max(0, league0.bot_team_count ?? 0) : 0;
+      const botIds = teams.filter((team) => team.is_bot && !managedIds.has(team.id)).slice(0, desiredBots).map((team) => team.id);
+      for (const team of teams) {
+        if (botIds.length >= desiredBots) break;
+        if (!managedIds.has(team.id) && !botIds.includes(team.id)) botIds.push(team.id);
+      }
+      const activeIds = new Set([...managedIds, ...botIds]);
+      if (activeIds.size < 2) {
+        reportError(new Error('At least two managed or bot teams are required to start.'));
+        return;
+      }
+      const runSeed = uid('run');
+      commit(() => {
+        const db = get().db;
+        const league = db.leagues.find((item) => item.id === leagueId)!;
+        const matchIds = new Set(db.matches.filter((match) => match.league_id === leagueId).map((match) => match.id));
+        db.games = db.games.filter((game) => !matchIds.has(game.match_id));
+        db.match_simulations = db.match_simulations.filter((simulation) => simulation.league_id !== leagueId);
+        db.matches = db.matches.filter((match) => match.league_id !== leagueId);
+        db.market_offers = db.market_offers.filter((offer) => offer.league_id !== leagueId);
+        db.players = db.players.filter((player) => player.league_id !== leagueId);
+        db.coaches = db.coaches.filter((coach) => coach.league_id !== leagueId);
+
+        const activeTeams = db.teams.filter((team) => team.league_id === leagueId && activeIds.has(team.id));
+        activeTeams.forEach((team, index) => {
+          team.run_active = true;
+          team.is_bot = botIds.includes(team.id);
+          team.bot_manager_name = team.is_bot ? botManagerName(team, index) : null;
+          team.budget = league.starting_budget ?? 5_000_000;
+          team.morale = 50;
+          team.synergy = 50;
+          team.updated_at = nowISO();
+          const squad = generateRunSquad(league, team, runSeed);
+          db.players.push(...squad.players);
+          db.coaches.push(squad.coach);
+        });
+        db.teams.filter((team) => team.league_id === leagueId && !activeIds.has(team.id)).forEach((team) => {
+          team.run_active = false;
+          team.is_bot = false;
+          team.bot_manager_name = null;
+        });
+        db.players.push(...generateFreeAgents(league, runSeed));
+        db.matches.push(...generateSchedule(league, activeTeams, { start: new Date() }));
+        league.run_phase = 'roster_reveal';
+        league.run_seed = runSeed;
+        league.run_started_at = nowISO();
+        league.current_run_week = 0;
+        league.updated_at = nowISO();
+      }, { toast: { kind: 'success', message: 'Run started. Rosters are ready to reveal.' } });
     },
 
     // -- teams ----------------------------------------------------------------
@@ -708,6 +948,11 @@ export const useStore = create<StoreState>((set, get) => {
         budget: input.budget ?? 2_000_000,
         wins: 0, losses: 0, games_won: 0, games_lost: 0, points: 0, form: '',
         generated: false,
+        is_bot: input.is_bot ?? false,
+        bot_manager_name: input.bot_manager_name ?? null,
+        run_active: input.run_active ?? true,
+        morale: input.morale ?? 50,
+        synergy: input.synergy ?? 50,
         created_at: ts,
         updated_at: ts,
       };
@@ -734,6 +979,35 @@ export const useStore = create<StoreState>((set, get) => {
         db.coaches.filter((c) => c.team_id === id).forEach((c) => (c.team_id = null));
         db.teams = db.teams.filter((t) => t.id !== id);
       }, { toast: { kind: 'info', message: 'Team removed' } });
+    },
+    setBotTeam(teamId, enabled) {
+      const team = get().db.teams.find((item) => item.id === teamId);
+      if (!team || !requireAdmin(team.league_id, 'configure bot teams')) return;
+      const league = get().db.leagues.find((item) => item.id === team.league_id);
+      if (!league || runPhase(league) !== 'team_selection') {
+        reportError(new Error('Bot teams can only be changed during team selection.'));
+        return;
+      }
+      const manager = get().db.league_members.find((member) => member.league_id === team.league_id && member.team_id === teamId && member.role === 'manager');
+      if (enabled && manager) {
+        reportError(new Error('Remove the human manager before assigning this team to a bot.'));
+        return;
+      }
+      commit(() => {
+        const target = get().db.teams.find((item) => item.id === teamId);
+        if (target) {
+          target.is_bot = enabled;
+          target.bot_manager_name = enabled ? botManagerName(target, get().db.teams.filter((item) => item.league_id === target.league_id && item.is_bot).length) : null;
+          target.updated_at = nowISO();
+          const targetLeague = get().db.leagues.find((item) => item.id === target.league_id);
+          if (targetLeague) {
+            const botCount = get().db.teams.filter((item) => item.league_id === target.league_id && item.is_bot).length;
+            targetLeague.bot_teams_enabled = botCount > 0;
+            targetLeague.bot_team_count = botCount;
+            targetLeague.updated_at = nowISO();
+          }
+        }
+      }, { toast: { kind: 'info', message: enabled ? `${team.short_name} assigned to a bot` : `${team.short_name} returned to the selection pool` } });
     },
 
     // -- players --------------------------------------------------------------
@@ -772,6 +1046,9 @@ export const useStore = create<StoreState>((set, get) => {
         rating_macro: input.rating_macro ?? ratings.rating_macro,
         rating_mechanics: input.rating_mechanics ?? ratings.rating_mechanics,
         rating_consistency: input.rating_consistency ?? ratings.rating_consistency,
+        category: input.category ?? playerCategory(overall),
+        potential: input.potential ?? Math.min(99, overall + 5),
+        hidden_until_reveal: input.hidden_until_reveal ?? false,
         status: input.status ?? (input.team_id ? 'active' : 'free_agent'),
         generated: false,
         created_at: ts,
@@ -934,14 +1211,23 @@ export const useStore = create<StoreState>((set, get) => {
       const m = get().db.matches.find((x) => x.id === matchId);
       if (!m) return;
       if (!requireAdmin(m.league_id, 'simulate matches')) return;
+      const league = get().db.leagues.find((item) => item.id === m.league_id);
+      if (league?.run_started_at && !['regular_season', 'playoffs'].includes(runPhase(league))) {
+        reportError(new Error('Official matches start after preseason.'));
+        return;
+      }
       commit(
         () => {
           const match = get().db.matches.find((x) => x.id === matchId)!;
-          playMatch(match);
-          recomputeStandings(match.league_id);
+          playMatch(match, true, true);
         },
-        { toast: { kind: 'match', message: resultToast(get().db, matchId) } },
+        { toast: { kind: 'match', message: 'Match simulation started' } },
       );
+      window.setTimeout(() => {
+        const running = get().db.match_simulations.some((simulation) => simulation.match_id === matchId && simulation.status === 'running');
+        if (!running) return;
+        commit(() => finishMatchSimulation(matchId), { toast: { kind: 'match', message: 'Match simulation completed' } });
+      }, 1800);
     },
     resetMatch(matchId) {
       const m0 = get().db.matches.find((x) => x.id === matchId);
@@ -951,6 +1237,7 @@ export const useStore = create<StoreState>((set, get) => {
         const m = db.matches.find((x) => x.id === matchId);
         if (!m) return;
         db.games = db.games.filter((g) => g.match_id !== matchId);
+        db.match_simulations = db.match_simulations.filter((simulation) => simulation.match_id !== matchId);
         m.status = 'scheduled';
         m.blue_score = 0;
         m.red_score = 0;
@@ -980,11 +1267,19 @@ export const useStore = create<StoreState>((set, get) => {
     },
     simulateWeek(leagueId, week) {
       if (!requireAdmin(leagueId, 'simulate matches')) return;
+      const league0 = get().db.leagues.find((item) => item.id === leagueId);
+      if (league0?.run_started_at && runPhase(league0) !== 'regular_season') {
+        reportError(new Error('Official weeks can only run during the regular season.'));
+        return;
+      }
       commit(
         () => {
           const db = get().db;
+          resolveOffersInDb(leagueId, true);
           const toPlay = db.matches.filter((m) => m.league_id === leagueId && m.week === week && m.status !== 'completed' && m.blue_team_id && m.red_team_id);
           toPlay.forEach((m) => playMatch(m));
+          const league = db.leagues.find((item) => item.id === leagueId);
+          if (league) { league.current_run_week = week + 1; league.updated_at = nowISO(); }
           recomputeStandings(leagueId);
         },
         { toast: { kind: 'match', message: `Week ${week} simulated` } },
@@ -992,6 +1287,11 @@ export const useStore = create<StoreState>((set, get) => {
     },
     simulateRegularSeason(leagueId) {
       if (!requireAdmin(leagueId, 'simulate the season')) return;
+      const league0 = get().db.leagues.find((item) => item.id === leagueId);
+      if (league0?.run_started_at && runPhase(league0) !== 'regular_season') {
+        reportError(new Error('Advance the run to the regular season first.'));
+        return;
+      }
       commit(
         () => {
           const db = get().db;
@@ -1002,7 +1302,7 @@ export const useStore = create<StoreState>((set, get) => {
             .forEach((m) => playMatch(m));
           // swiss: iteratively play + generate next rounds (cap 5 rounds)
           if (league.format === 'swiss') {
-            const teams = db.teams.filter((t) => t.league_id === leagueId).map((t) => t.id);
+            const teams = db.teams.filter((t) => t.league_id === leagueId && t.run_active !== false).map((t) => t.id);
             for (let r = 0; r < 6; r++) {
               const swiss = db.matches.filter((m) => m.league_id === leagueId && m.stage === 'swiss');
               const pending = swiss.filter((m) => m.status !== 'completed');
@@ -1021,6 +1321,11 @@ export const useStore = create<StoreState>((set, get) => {
     },
     simulatePlayoffs(leagueId) {
       if (!requireAdmin(leagueId, 'simulate playoffs')) return;
+      const league0 = get().db.leagues.find((item) => item.id === leagueId);
+      if (league0?.run_started_at && runPhase(league0) !== 'playoffs') {
+        reportError(new Error('Advance the run to playoffs first.'));
+        return;
+      }
       commit(
         () => {
           const db = get().db;
@@ -1041,6 +1346,45 @@ export const useStore = create<StoreState>((set, get) => {
       get().simulateRegularSeason(leagueId);
       get().simulatePlayoffs(leagueId);
       get().pushToast({ kind: 'success', message: 'Full tournament simulated' });
+    },
+    playFriendly(leagueId, opponentTeamId) {
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      const ownTeamId = managedTeamOf(leagueId);
+      if (!league || !isPreseason(runPhase(league))) {
+        reportError(new Error('Friendly matches are available during preseason.'));
+        return;
+      }
+      if (!ownTeamId || ownTeamId === opponentTeamId || !requireTeam(leagueId, ownTeamId, 'play friendlies')) return;
+      const opponent = get().db.teams.find((team) => team.id === opponentTeamId && team.league_id === leagueId && team.run_active !== false);
+      if (!opponent) return;
+      const matchId = uid('friendly');
+      commit(() => {
+        const match: Match = {
+          id: matchId,
+          league_id: leagueId,
+          stage: 'friendly',
+          week: league.current_run_week ?? 1,
+          match_day: 0,
+          date_time: nowISO(),
+          blue_team_id: ownTeamId,
+          red_team_id: opponentTeamId,
+          format: 'BO1',
+          status: 'scheduled',
+          winner_team_id: null,
+          blue_score: 0,
+          red_score: 0,
+          patch: null,
+          venue_text: 'Preseason scrim',
+          stream_url: null,
+          external_url: null,
+          source_name: 'Run friendly',
+          source_url: null,
+          created_at: nowISO(),
+          updated_at: nowISO(),
+        };
+        get().db.matches.push(match);
+        playMatch(match);
+      }, { toast: { kind: 'match', message: `Friendly played against ${opponent.short_name}` } });
     },
 
     // -- playoffs generation --------------------------------------------------
@@ -1156,6 +1500,72 @@ export const useStore = create<StoreState>((set, get) => {
       }, { toast: { kind: 'trade', message: `Trade ${status}` } });
     },
 
+    submitMarketOffer(input) {
+      const league = get().db.leagues.find((item) => item.id === input.leagueId);
+      const player = get().db.players.find((item) => item.id === input.playerId && item.league_id === input.leagueId);
+      const team = get().db.teams.find((item) => item.id === input.teamId && item.league_id === input.leagueId);
+      if (!league || !player || !team || player.team_id) {
+        reportError(new Error('This player is no longer available.'));
+        return '';
+      }
+      if (!requireTeam(input.leagueId, input.teamId, 'submit free-agent offers')) return '';
+      const phase = runPhase(league);
+      if (!(isPreseason(phase) || phase === 'regular_season')) {
+        reportError(new Error('Free-agent offers open during preseason and the regular season.'));
+        return '';
+      }
+      const fee = Math.max(0, Math.round(input.transferFee));
+      const salary = Math.max(0, Math.round(input.salary));
+      if (fee > team.budget) {
+        reportError(new Error(`${team.short_name} cannot afford that transfer fee.`));
+        return '';
+      }
+      const id = uid('offer');
+      const submittedAt = nowISO();
+      const expiresAt = new Date(Date.now() + Math.max(1, league.free_agent_offer_window_hours ?? 24) * 3600000).toISOString();
+      commit(() => {
+        get().db.market_offers
+          .filter((offer) => offer.player_id === input.playerId && offer.team_id === input.teamId && offer.status === 'active')
+          .forEach((offer) => { offer.status = 'cancelled'; offer.resolved_at = submittedAt; });
+        get().db.market_offers.push({
+          id,
+          league_id: input.leagueId,
+          player_id: input.playerId,
+          team_id: input.teamId,
+          offered_by_guest_id: get().currentGuestId,
+          transfer_fee: fee,
+          salary,
+          role_promise: input.rolePromise,
+          status: 'active',
+          submitted_at: submittedAt,
+          expires_at: expiresAt,
+          resolved_at: null,
+        });
+      }, { toast: { kind: 'success', message: `Offer submitted for ${player.nickname}` } });
+      return id;
+    },
+
+    cancelMarketOffer(offerId) {
+      const offer = get().db.market_offers.find((item) => item.id === offerId);
+      if (!offer || offer.status !== 'active') return;
+      const role = roleOf(offer.league_id);
+      if (offer.offered_by_guest_id !== get().currentGuestId && role !== 'owner' && role !== 'admin') {
+        reportError(new Error('Only the offering manager or an admin can cancel this offer.'));
+        return;
+      }
+      commit(() => {
+        const target = get().db.market_offers.find((item) => item.id === offerId);
+        if (target) { target.status = 'cancelled'; target.resolved_at = nowISO(); }
+      }, { toast: { kind: 'info', message: 'Offer cancelled' } });
+    },
+
+    resolveMarketOffers(leagueId, force = false) {
+      if (!requireAdmin(leagueId, 'resolve market offers')) return;
+      commit(() => { resolveOffersInDb(leagueId, force); }, {
+        toast: { kind: 'success', message: 'Market offers resolved' },
+      });
+    },
+
     // -- admins ---------------------------------------------------------------
     setLeagueAdmin(leagueId, guestId, role, teamId = null) {
       if (!requireAdmin(leagueId, 'manage roles')) return;
@@ -1185,6 +1595,16 @@ export const useStore = create<StoreState>((set, get) => {
         reportError(new Error('Choose a nickname before claiming a team.'));
         return false;
       }
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      const team = get().db.teams.find((item) => item.id === teamId && item.league_id === leagueId);
+      if (!league || runPhase(league) !== 'team_selection') {
+        reportError(new Error('Teams can only be claimed during team selection.'));
+        return false;
+      }
+      if (!team || team.is_bot) {
+        reportError(new Error('That team is not available for selection.'));
+        return false;
+      }
       if (!adapter) return false;
       try {
         await adapter.claimTeam(leagueId, teamId, guestId);
@@ -1199,6 +1619,16 @@ export const useStore = create<StoreState>((set, get) => {
     },
     assignManager(leagueId, guestId, teamId) {
       if (!requireAdmin(leagueId, 'assign managers')) return;
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      if (!league || runPhase(league) !== 'team_selection') {
+        reportError(new Error('Managers can only be assigned during team selection.'));
+        return;
+      }
+      const team = get().db.teams.find((item) => item.id === teamId && item.league_id === leagueId);
+      if (!team || team.is_bot) {
+        reportError(new Error('That team is not available for a human manager.'));
+        return;
+      }
       const taken = get().db.league_members.find(
         (m) => m.league_id === leagueId && m.role === 'manager' && m.team_id === teamId && m.guest_id !== guestId,
       );

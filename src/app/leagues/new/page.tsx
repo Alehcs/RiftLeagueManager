@@ -47,7 +47,7 @@ export default function NewLeaguePage() {
       createTeam(leagueId, { name, short_name: short, region: form.region, tier: form.tier });
     });
     if (genSchedule && names.length >= 2) regenerate(leagueId, form.format);
-    router.push(`/leagues/${leagueId}`);
+    router.push(`/leagues/${leagueId}/lobby`);
   };
 
   const doClone = () => {

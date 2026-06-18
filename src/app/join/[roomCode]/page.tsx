@@ -19,7 +19,7 @@ export default function JoinRoomPage({ params }: { params: { roomCode: string } 
     if (!guest || attempted.current) return;
     attempted.current = true;
     void joinLeague(params.roomCode).then((leagueId) => {
-      if (leagueId) router.replace(`/leagues/${leagueId}`);
+      if (leagueId) router.replace(`/leagues/${leagueId}/lobby`);
     });
   }, [guest, joinLeague, params.roomCode, router]);
 

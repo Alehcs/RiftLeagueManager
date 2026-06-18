@@ -1,19 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink } from 'lucide-react';
+import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink, HandCoins } from 'lucide-react';
 import type { Player, Team } from '@/lib/types';
 import { useStore } from '@/lib/store/store';
 import { useDb, useLeagueRole, useManagedTeamId, canAdminister, canManageTeam } from '@/lib/store/hooks';
 import { teamById } from '@/lib/store/selectors';
 import { Dialog, ConfirmButton } from '@/components/ui/dialog';
 import { Button, Badge } from '@/components/ui/primitives';
-import { Select } from '@/components/ui/form';
+import { Input, Select } from '@/components/ui/form';
 import { PlayerAvatar } from '@/components/ui/image';
 import { RoleBadge, RatingBar, OverallBadge } from '@/components/ui/rating';
-import { PlayerStatusBadge, GeneratedBadge, SourceBadge } from '@/components/common/badges';
+import { PlayerStatusBadge, GeneratedBadge, SourceBadge, PlayerCategoryBadge } from '@/components/common/badges';
 import { PlayerForm } from './PlayerForm';
-import { flagEmoji, formatMoney, formatMoneyFull, formatDate } from '@/lib/utils';
+import { flagEmoji, formatMoney, formatMoneyFull } from '@/lib/utils';
+import { isPreseason, playerCategory, runPhase } from '@/services/run';
+import type { RolePromise } from '@/lib/types';
 
 export function PlayerDialog({
   player,
@@ -34,6 +36,7 @@ export function PlayerDialog({
   const releasePlayer = useStore((s) => s.releasePlayer);
   const sellPlayer = useStore((s) => s.sellPlayer);
   const setPlayerStatus = useStore((s) => s.setPlayerStatus);
+  const submitMarketOffer = useStore((s) => s.submitMarketOffer);
   const role = useLeagueRole(player.league_id);
   const managedTeam = useManagedTeamId(player.league_id);
 
@@ -46,8 +49,15 @@ export function PlayerDialog({
 
   const [editing, setEditing] = useState(false);
   const [signTeam, setSignTeam] = useState(isAdmin ? '' : managedTeam ?? '');
+  const [transferFee, setTransferFee] = useState(player.value);
+  const [salary, setSalary] = useState(player.salary);
+  const [rolePromise, setRolePromise] = useState<RolePromise>('starter');
 
   const team = teamById(db, player.team_id);
+  const league = db.leagues.find((item) => item.id === player.league_id);
+  const phase = league ? runPhase(league) : 'lobby';
+  const useOffers = isPreseason(phase) || phase === 'regular_season';
+  const activeOffers = db.market_offers.filter((offer) => offer.player_id === player.id && offer.status === 'active');
 
   return (
     <Dialog
@@ -83,6 +93,7 @@ export function PlayerDialog({
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold text-slate-100">{player.nickname}</span>
                 <PlayerStatusBadge status={player.status} />
+                <PlayerCategoryBadge category={player.category ?? playerCategory(player.rating_overall)} />
               </div>
               <div className="text-sm text-slate-400">
                 {player.real_name || '—'} {player.age ? `· ${player.age}y` : ''}
@@ -100,7 +111,7 @@ export function PlayerDialog({
           <div className="grid grid-cols-3 gap-2 text-center">
             <Meta label="Value" value={formatMoney(player.value)} />
             <Meta label="Salary" value={formatMoney(player.salary)} />
-            <Meta label="Contract" value={player.contract_until ? formatDate(player.contract_until) : '—'} />
+            <Meta label="Potential" value={`${player.potential ?? player.rating_overall}`} />
           </div>
 
           <div className="space-y-2 rounded-lg border border-border bg-bg-soft/40 p-3">
@@ -120,7 +131,21 @@ export function PlayerDialog({
           {/* Market actions (gated by role + team) */}
           <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
             {!player.team_id ? (
-              canSign && (
+              canSign && (useOffers ? (
+                <div className="w-full space-y-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Select value={signTeam} onChange={(e) => setSignTeam(e.target.value)}>
+                      {isAdmin && <option value="">Offer from team…</option>}
+                      {signTeams.filter((item) => item.run_active !== false).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </Select>
+                    <Select value={rolePromise} onChange={(e) => setRolePromise(e.target.value as RolePromise)}><option value="starter">Starter role</option><option value="rotation">Rotation role</option><option value="development">Development role</option></Select>
+                    <Input type="number" min={0} value={transferFee} onChange={(e) => setTransferFee(Number(e.target.value))} aria-label="Transfer fee" />
+                    <Input type="number" min={0} value={salary} onChange={(e) => setSalary(Number(e.target.value))} aria-label="Salary offer" />
+                  </div>
+                  <div className="flex justify-end"><Button variant="primary" size="sm" disabled={!signTeam} onClick={() => { submitMarketOffer({ leagueId: player.league_id, playerId: player.id, teamId: signTeam, transferFee, salary, rolePromise }); onClose(); }}><HandCoins size={14} /> Submit offer</Button></div>
+                  {activeOffers.length > 0 && <div className="space-y-1 rounded-lg border border-border bg-bg-soft/40 p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">Competing offers</div>{activeOffers.map((offer) => <div key={offer.id} className="flex flex-wrap justify-between gap-2 text-xs text-slate-400"><span>{teams.find((item) => item.id === offer.team_id)?.short_name} · {offer.role_promise}</span><span>{formatMoney(offer.transfer_fee)} + {formatMoney(offer.salary)}/yr</span></div>)}</div>}
+                </div>
+              ) : (
                 <div className="flex items-center gap-2">
                   <Select value={signTeam} onChange={(e) => setSignTeam(e.target.value)} className="w-44">
                     {isAdmin && <option value="">Sign to team…</option>}
@@ -132,7 +157,7 @@ export function PlayerDialog({
                     <UserPlus size={14} /> Sign
                   </Button>
                 </div>
-              )
+              ))
             ) : (
               canManageThis && (
                 <>

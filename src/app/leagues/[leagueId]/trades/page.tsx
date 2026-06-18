@@ -41,9 +41,9 @@ export default function TradesPage({ params }: { params: { leagueId: string } })
           <h2 className="text-lg font-bold text-slate-100">Trades</h2>
           <p className="text-sm text-slate-500">{pending.length} pending · {trades.length} total</p>
         </div>
-        <Button variant="primary" onClick={tradeDialog.openIt}>
+        {manage && <Button variant="primary" onClick={tradeDialog.openIt}>
           <ArrowLeftRight size={16} /> Propose trade
-        </Button>
+        </Button>}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

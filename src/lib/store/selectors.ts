@@ -15,16 +15,19 @@ export const leagueByIdOrSlug = (db: Database, key: string): League | undefined 
   db.leagues.find((l) => l.id === key || l.slug === key);
 
 export const teamsOf = (db: Database, leagueId: string): Team[] =>
-  db.teams.filter((t) => t.league_id === leagueId);
+  db.teams.filter((t) => t.league_id === leagueId && t.run_active !== false);
+
+export const runTeamsOf = (db: Database, leagueId: string): Team[] =>
+  db.teams.filter((t) => t.league_id === leagueId && t.run_active !== false);
 
 export const teamById = (db: Database, id: string | null): Team | undefined =>
   id ? db.teams.find((t) => t.id === id) : undefined;
 
 export const playersOf = (db: Database, leagueId: string): Player[] =>
-  db.players.filter((p) => p.league_id === leagueId);
+  db.players.filter((p) => p.league_id === leagueId && !p.hidden_until_reveal);
 
 export const playersOfTeam = (db: Database, teamId: string): Player[] =>
-  db.players.filter((p) => p.team_id === teamId);
+  db.players.filter((p) => p.team_id === teamId && !p.hidden_until_reveal);
 
 export const playerById = (db: Database, id: string): Player | undefined =>
   db.players.find((p) => p.id === id);
@@ -58,6 +61,12 @@ export const tradeItemsOf = (db: Database, tradeId: string) =>
 
 export const transferHistoryOf = (db: Database, leagueId: string) =>
   db.transfer_history.filter((t) => t.league_id === leagueId).sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+
+export const marketOffersOf = (db: Database, leagueId: string) =>
+  db.market_offers.filter((offer) => offer.league_id === leagueId).sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at));
+
+export const simulationOf = (db: Database, matchId: string) =>
+  db.match_simulations.find((simulation) => simulation.match_id === matchId);
 
 export const importJobsOf = (db: Database, leagueId: string | null) =>
   db.import_jobs.filter((j) => (leagueId ? j.league_id === leagueId : true)).sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));

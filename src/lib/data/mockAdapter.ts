@@ -5,6 +5,7 @@ import { BROADCAST_CHANNEL, GUEST_STORAGE_KEY, STORAGE_KEY } from '@/lib/constan
 import { createRoomCode, nowISO, uid } from '@/lib/utils';
 import { EMPTY_DB, type Database, type GuestSession } from '@/lib/types';
 import { managedTeamId, roleInLeague } from '@/lib/store/selectors';
+import { runPhase } from '@/services/run';
 import type { DataAdapter, DataEvent, DataSnapshot } from './index';
 
 type MockRow = Database[keyof Database][number];
@@ -102,6 +103,9 @@ export class MockAdapter implements DataAdapter {
     const db = this.readLocalDatabase() ?? normalizeMockDatabase(buildSeedDatabase());
     const team = db.teams.find((t) => t.id === teamId && t.league_id === leagueId);
     if (!team) throw new Error('Team not found in this league.');
+    const league = db.leagues.find((item) => item.id === leagueId);
+    if (!league || runPhase(league) !== 'team_selection') throw new Error('Teams can only be claimed during team selection.');
+    if (team.is_bot) throw new Error('That team is assigned to a bot.');
     const taken = db.league_members.find(
       (m) => m.league_id === leagueId && m.role === 'manager' && m.team_id === teamId && m.guest_id !== guestId,
     );
@@ -268,6 +272,26 @@ function normalizeMockDatabase(input: Database): Database {
     owner_guest_id: league.owner_guest_id || league.owner_user_id || '',
     room_code: league.room_code || createRoomCode(),
     admin_code_hash: league.admin_code_hash ?? null,
+    run_phase: league.run_phase ?? 'lobby',
+    starting_budget: league.starting_budget ?? 5_000_000,
+    preparation_weeks: league.preparation_weeks ?? 3,
+    bot_teams_enabled: league.bot_teams_enabled ?? false,
+    bot_team_count: league.bot_team_count ?? 0,
+    friendlies_affect_development: league.friendlies_affect_development ?? true,
+    market_rules: league.market_rules ?? 'Open offers during preseason and between official weeks.',
+    free_agent_offer_window_hours: league.free_agent_offer_window_hours ?? 24,
+    current_run_week: league.current_run_week ?? 0,
+    run_seed: league.run_seed ?? null,
+    run_started_at: league.run_started_at ?? null,
+    run_completed_at: league.run_completed_at ?? null,
+  }));
+  db.teams = db.teams.map((team) => ({
+    ...team,
+    is_bot: team.is_bot ?? false,
+    bot_manager_name: team.bot_manager_name ?? null,
+    run_active: team.run_active ?? true,
+    morale: team.morale ?? 50,
+    synergy: team.synergy ?? 50,
   }));
   db.league_admins = db.league_admins.map((admin) => ({
     ...admin,
@@ -288,7 +312,7 @@ function deletedRows<T extends { id: string }>(previous: T[], next: T[]): T[] {
 
 function touchedLeagueIds(previous: Database, next: Database): Set<string> {
   const result = new Set<string>();
-  const direct = ['leagues', 'league_admins', 'teams', 'players', 'coaches', 'matches', 'trades', 'transfer_history', 'audit_logs'] as const;
+  const direct = ['leagues', 'league_admins', 'teams', 'players', 'coaches', 'matches', 'trades', 'transfer_history', 'market_offers', 'match_simulations', 'audit_logs'] as const;
   for (const table of direct) {
     const before = previous[table] as MockRow[];
     const after = next[table] as MockRow[];

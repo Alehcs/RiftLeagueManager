@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, Play, RotateCcw, Save, Swords, Clock, Coins } from 'lucide-react';
 import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
-import { teamById, gamesOf, playersOf, coachesOf } from '@/lib/store/selectors';
+import { teamById, gamesOf, playersOf, coachesOf, simulationOf } from '@/lib/store/selectors';
 import { computeTeamStrength } from '@/services/strength';
 import { seriesWinProbability } from '@/services/simulation';
 import { TeamLogo } from '@/components/ui/image';
@@ -13,6 +13,7 @@ import { Button, Card, CardHeader, CardTitle, CardBody, Badge } from '@/componen
 import { Input } from '@/components/ui/form';
 import { MatchStatusBadge } from '@/components/common/badges';
 import { cn, formatDateTime, formatPercent } from '@/lib/utils';
+import type { TimelineEvent } from '@/services/run';
 
 export default function MatchDetailPage({ params }: { params: { leagueId: string; matchId: string } }) {
   const db = useDb();
@@ -22,6 +23,7 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
   const reset = useStore((s) => s.resetMatch);
   const setResult = useStore((s) => s.setMatchResult);
   const match = db.matches.find((m) => m.id === params.matchId);
+  const simulation = simulationOf(db, params.matchId);
 
   const [blueScore, setBlueScore] = useState('');
   const [redScore, setRedScore] = useState('');
@@ -104,8 +106,8 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
             <CardTitle>Result controls</CardTitle>
           </CardHeader>
           <CardBody className="flex flex-wrap items-end gap-3">
-            <Button variant="primary" size="sm" onClick={() => simulate(match.id)}>
-              <Play size={14} /> Simulate
+            <Button variant="primary" size="sm" disabled={match.status !== 'scheduled'} onClick={() => simulate(match.id)}>
+              <Play size={14} /> Start match
             </Button>
             <Button variant="ghost" size="sm" onClick={() => reset(match.id)}>
               <RotateCcw size={14} /> Reset
@@ -127,6 +129,8 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
           </CardBody>
         </Card>
       )}
+
+      {simulation && <SimulationTimeline timelineJson={simulation.event_timeline} completed={simulation.status === 'completed'} />}
 
       {/* Games */}
       {games.length > 0 && (
@@ -159,6 +163,46 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
       )}
     </div>
   );
+}
+
+function SimulationTimeline({ timelineJson, completed }: { timelineJson: string; completed: boolean }) {
+  const events = parseTimeline(timelineJson);
+  const [visible, setVisible] = useState(completed ? events.length : 1);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!playing) return;
+    setVisible(1);
+    const timer = window.setInterval(() => {
+      setVisible((count) => {
+        if (count >= events.length) {
+          window.clearInterval(timer);
+          setPlaying(false);
+          return count;
+        }
+        return count + 1;
+      });
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [events.length, playing]);
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>Shared simulation timeline</CardTitle><Button size="sm" variant="outline" onClick={() => setPlaying(true)}><Play size={13} /> {completed ? 'Watch replay' : 'Watch simulation'}</Button></CardHeader>
+      <CardBody className="space-y-2">
+        {events.slice(0, visible).map((event, index) => <div key={`${event.minute}-${index}`} className="flex gap-3 rounded-lg border border-border bg-bg-soft/40 px-3 py-2 text-sm"><span className="w-10 shrink-0 font-semibold tabular-nums text-rift-cyan">{event.minute}&apos;</span><span className="text-slate-300">{event.text}</span></div>)}
+      </CardBody>
+    </Card>
+  );
+}
+
+function parseTimeline(value: string): TimelineEvent[] {
+  try {
+    const parsed = JSON.parse(value) as TimelineEvent[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function TeamColumn({ teamId, leagueId, win, side }: { teamId: string; leagueId: string; win: boolean; side: 'blue' | 'red' }) {

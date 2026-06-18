@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { cn, formatDateTime } from '@/lib/utils';
 import type { Match } from '@/lib/types';
 import { useDb } from '@/lib/store/hooks';
-import { teamById } from '@/lib/store/selectors';
+import { simulationOf, teamById } from '@/lib/store/selectors';
 import { TeamLogo } from '@/components/ui/image';
 import { Badge } from '@/components/ui/primitives';
 import { MatchStatusBadge } from '@/components/common/badges';
@@ -27,6 +27,8 @@ function Side({ teamId, score, winner, align }: { teamId: string; score: number;
 }
 
 export function MatchCard({ match, leagueId }: { match: Match; leagueId: string }) {
+  const db = useDb();
+  const simulation = simulationOf(db, match.id);
   const isDone = match.status === 'completed';
   const blueWon = isDone && match.winner_team_id === match.blue_team_id;
   const redWon = isDone && match.winner_team_id === match.red_team_id;
@@ -67,6 +69,7 @@ export function MatchCard({ match, leagueId }: { match: Match; leagueId: string 
       {match.date_time && !isDone && (
         <div className="mt-2 text-center text-[11px] text-slate-600">{formatDateTime(match.date_time)}</div>
       )}
+      {simulation && <div className="mt-2 text-center text-[11px] font-medium text-rift-cyan">{isDone ? 'Watch replay' : 'Watch simulation'}</div>}
     </Link>
   );
 }

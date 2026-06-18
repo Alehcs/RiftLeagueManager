@@ -8,7 +8,8 @@ import { useStore } from '@/lib/store/store';
 import { leagueByIdOrSlug } from '@/lib/store/selectors';
 import { LeagueSubnav } from '@/components/league/LeagueSubnav';
 import { TeamLogo } from '@/components/ui/image';
-import { TierBadge, RegionBadge, FormatBadge } from '@/components/common/badges';
+import { TierBadge, RegionBadge, FormatBadge, RunPhaseBadge } from '@/components/common/badges';
+import { runPhase } from '@/services/run';
 import { PageContainer } from '@/components/common/layout';
 import { Badge, Button, Spinner } from '@/components/ui/primitives';
 import { guestInitials } from '@/lib/utils';
@@ -70,6 +71,7 @@ export default function LeagueLayout({
             <h1 className="text-2xl font-bold text-slate-50">{league.name}</h1>
             <TierBadge tier={league.tier} />
             <RegionBadge region={league.region} />
+            <RunPhaseBadge phase={runPhase(league)} />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-400">
             <span>{league.season}</span>

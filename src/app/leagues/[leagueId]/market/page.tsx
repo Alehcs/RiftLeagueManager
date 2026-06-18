@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowLeftRight, Search, Wallet, CalendarClock } from 'lucide-react';
-import { useDb, useLeague, useLeagueRole, canManage } from '@/lib/store/hooks';
-import { freeAgents, freeAgentCoaches, teamsOf, playersOf, coachesOf } from '@/lib/store/selectors';
+import { useEffect, useState } from 'react';
+import { ArrowLeftRight, Search, Wallet, CalendarClock, HandCoins } from 'lucide-react';
+import { useDb, useLeague, useLeagueRole, canManage, canAdminister } from '@/lib/store/hooks';
+import { freeAgents, freeAgentCoaches, teamsOf, playersOf, coachesOf, marketOffersOf } from '@/lib/store/selectors';
 import { PLAYER_ROLES, type Role } from '@/lib/types';
 import { ROLE_META } from '@/lib/constants';
 import { salaryCommitment } from '@/services/transfers';
@@ -14,16 +14,28 @@ import { Card, CardHeader, CardTitle, CardBody, Button, Stat, EmptyState } from 
 import { useDialog } from '@/components/ui/dialog';
 import { Input, Select } from '@/components/ui/form';
 import { formatDate, formatMoney } from '@/lib/utils';
+import { useStore } from '@/lib/store/store';
 
 export default function MarketPage({ params }: { params: { leagueId: string } }) {
   const db = useDb();
   const league = useLeague(params.leagueId);
   const role = useLeagueRole(league?.id);
   const tradeDialog = useDialog();
+  const resolveOffers = useStore((state) => state.resolveMarketOffers);
   const [tab, setTab] = useState<'players' | 'coaches'>('players');
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all');
   const [minRating, setMinRating] = useState(0);
+  const leagueId = league?.id ?? '';
+  const offers = marketOffersOf(db, leagueId);
+  const activeOffers = offers.filter((offer) => offer.status === 'active');
+
+  useEffect(() => {
+    if (!leagueId || !canAdminister(role) || activeOffers.length === 0) return;
+    const nextExpiry = Math.min(...activeOffers.map((offer) => +new Date(offer.expires_at)));
+    const timer = window.setTimeout(() => resolveOffers(leagueId, false), Math.max(0, nextExpiry - Date.now()) + 250);
+    return () => window.clearTimeout(timer);
+  }, [activeOffers, leagueId, resolveOffers, role]);
 
   if (!league) return null;
   const teams = teamsOf(db, league.id);
@@ -49,11 +61,11 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-bold text-slate-100">Transfer market</h2>
-          <p className="text-sm text-slate-500">Sign free agents, run trades & manage budgets</p>
+          <p className="text-sm text-slate-500">{league.market_rules || 'Submit offers, run trades, and manage team budgets.'}</p>
         </div>
-        <Button variant="primary" onClick={tradeDialog.openIt}>
+        {manage && <Button variant="primary" onClick={tradeDialog.openIt}>
           <ArrowLeftRight size={16} /> Trade center
-        </Button>
+        </Button>}
       </div>
 
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4">
@@ -62,6 +74,19 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
         <Stat label="Teams" value={teams.length} />
         <Stat label="Avg budget" value={formatMoney(teams.reduce((a, t) => a + t.budget, 0) / Math.max(1, teams.length))} accent="#c8a85a" />
       </div>
+
+      {activeOffers.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-1.5"><HandCoins size={14} /> Active free-agent offers</CardTitle>{canAdminister(role) && <Button size="sm" variant="outline" onClick={() => resolveOffers(league.id, false)}>Resolve expired</Button>}</CardHeader>
+          <CardBody className="space-y-2">
+            {activeOffers.map((offer) => {
+              const player = allPlayers.find((item) => item.id === offer.player_id);
+              const team = teams.find((item) => item.id === offer.team_id);
+              return <div key={offer.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-bg-soft/40 px-3 py-2 text-sm"><span className="font-medium text-slate-200">{team?.short_name} → {player?.nickname}</span><span className="text-xs text-slate-400">{formatMoney(offer.transfer_fee)} fee · {formatMoney(offer.salary)}/yr · {offer.role_promise}</span></div>;
+            })}
+          </CardBody>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Free agents */}
