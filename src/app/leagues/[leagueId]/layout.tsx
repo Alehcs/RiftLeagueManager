@@ -13,6 +13,7 @@ import { runPhase } from '@/services/run';
 import { PageContainer } from '@/components/common/layout';
 import { Badge, Button, Spinner } from '@/components/ui/primitives';
 import { guestInitials } from '@/lib/utils';
+import { COMPETITION_MODE_META, competitionMode } from '@/services/competition';
 
 export default function LeagueLayout({
   children,
@@ -72,6 +73,7 @@ export default function LeagueLayout({
             <TierBadge tier={league.tier} />
             <RegionBadge region={league.region} />
             <RunPhaseBadge phase={runPhase(league)} />
+            <Badge color="#a78bfa">{COMPETITION_MODE_META[competitionMode(league)].label}</Badge>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-400">
             <span>{league.season}</span>
@@ -94,6 +96,7 @@ export default function LeagueLayout({
               </a>
             )}
           </div>
+          <p className="mt-1 text-xs text-slate-500">{COMPETITION_MODE_META[competitionMode(league)].description}</p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <div className="flex items-center gap-2">

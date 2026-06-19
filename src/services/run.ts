@@ -15,6 +15,7 @@ import { Rng } from '@/lib/rng';
 import { clamp, nowISO, uid } from '@/lib/utils';
 import { generateCoachRatings, generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
 import type { MatchSimResult } from '@/services/simulation';
+import { competitionMode } from '@/services/competition';
 
 const NICKS = [
   'Aero', 'Arc', 'Blaze', 'Cipher', 'Crown', 'Drift', 'Echo', 'Ember', 'Fable', 'Flux',
@@ -35,6 +36,14 @@ export const RUN_PHASES: LeagueRunPhase[] = [
   'preseason_week_3',
   'regular_season',
   'playoffs',
+  'msi_qualification',
+  'msi',
+  'midseason_break',
+  'second_regional_phase',
+  'regional_finals',
+  'worlds',
+  'offseason',
+  'next_season_setup',
   'completed',
 ];
 
@@ -47,6 +56,14 @@ export const RUN_PHASE_LABELS: Record<LeagueRunPhase, string> = {
   preseason_week_3: 'Preseason week 3',
   regular_season: 'Regular season',
   playoffs: 'Playoffs',
+  msi_qualification: 'MSI qualification',
+  msi: 'MSI',
+  midseason_break: 'Mid-season break',
+  second_regional_phase: 'Second regional phase',
+  regional_finals: 'Regional finals',
+  worlds: 'Worlds',
+  offseason: 'Offseason',
+  next_season_setup: 'Next season setup',
   completed: 'Completed',
 };
 
@@ -66,15 +83,24 @@ export function playerCategory(overall: number): PlayerCategory {
 
 export function nextRunPhase(league: League): LeagueRunPhase {
   const phase = runPhase(league);
+  const mode = competitionMode(league);
   const prepWeeks = clamp(league.preparation_weeks ?? 3, 1, 3);
   if (phase === 'lobby') return 'team_selection';
   if (phase === 'team_selection') return 'roster_reveal';
-  if (phase === 'roster_reveal') return prepWeeks >= 1 ? 'preseason_week_1' : 'regular_season';
+  if (phase === 'roster_reveal') return mode === 'quick_tournament' ? 'regular_season' : prepWeeks >= 1 ? 'preseason_week_1' : 'regular_season';
   if (phase === 'preseason_week_1') return prepWeeks >= 2 ? 'preseason_week_2' : 'regular_season';
   if (phase === 'preseason_week_2') return prepWeeks >= 3 ? 'preseason_week_3' : 'regular_season';
   if (phase === 'preseason_week_3') return 'regular_season';
   if (phase === 'regular_season') return 'playoffs';
-  if (phase === 'playoffs') return 'completed';
+  if (phase === 'playoffs') return mode === 'full_circuit' ? 'msi_qualification' : 'completed';
+  if (phase === 'msi_qualification') return 'msi';
+  if (phase === 'msi') return 'midseason_break';
+  if (phase === 'midseason_break') return 'second_regional_phase';
+  if (phase === 'second_regional_phase') return 'regional_finals';
+  if (phase === 'regional_finals') return 'worlds';
+  if (phase === 'worlds') return 'offseason';
+  if (phase === 'offseason') return 'next_season_setup';
+  if (phase === 'next_season_setup') return 'completed';
   return 'completed';
 }
 

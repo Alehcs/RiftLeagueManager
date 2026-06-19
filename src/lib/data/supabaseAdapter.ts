@@ -14,6 +14,7 @@ const UPSERT_ORDER: TableName[] = [
   'profiles',
   'guest_sessions',
   'leagues',
+  'season_circuits',
   'teams',
   'league_admins',
   'league_members',
@@ -32,6 +33,7 @@ const UPSERT_ORDER: TableName[] = [
 ];
 const DELETE_ORDER: TableName[] = [
   'leagues',
+  'season_circuits',
   'audit_logs',
   'import_jobs',
   'transfer_history',
@@ -63,6 +65,7 @@ const REALTIME_TABLES: TableName[] = [
   'match_simulations',
   'audit_logs',
   'league_members',
+  'season_circuits',
 ];
 
 export class SupabaseAdapter implements DataAdapter {
@@ -273,7 +276,7 @@ export class SupabaseAdapter implements DataAdapter {
       const response = table === 'guest_sessions'
         ? await this.client.from('guest_sessions').select('id, display_name, avatar_color, created_at, last_seen_at').range(from, from + pageSize - 1)
         : table === 'leagues'
-          ? await this.client.from('leagues').select('id, name, slug, region, tier, season, logo_url, external_url, source_name, source_url, format, owner_guest_id, owner_user_id, room_code, is_seed, last_imported_at, run_phase, starting_budget, preparation_weeks, bot_teams_enabled, bot_team_count, friendlies_affect_development, market_rules, free_agent_offer_window_hours, current_run_week, run_seed, run_started_at, run_completed_at, created_at, updated_at').range(from, from + pageSize - 1)
+          ? await this.client.from('leagues').select('id, name, slug, region, tier, season, logo_url, external_url, source_name, source_url, format, owner_guest_id, owner_user_id, room_code, is_seed, last_imported_at, run_phase, starting_budget, preparation_weeks, bot_teams_enabled, bot_team_count, friendlies_affect_development, market_rules, free_agent_offer_window_hours, current_run_week, run_seed, run_started_at, run_completed_at, competition_mode, created_at, updated_at').range(from, from + pageSize - 1)
           : await this.client.from(table).select('*').range(from, from + pageSize - 1);
       const { data, error } = response;
       if (error) throw new Error(dbError('load', table, error.message));
@@ -332,6 +335,12 @@ export class SupabaseAdapter implements DataAdapter {
       payload.final_result = parseJson(payload.final_result);
       payload.player_stats = parseJson(payload.player_stats);
       payload.team_stats = parseJson(payload.team_stats);
+    }
+    if (table === 'season_circuits') {
+      payload.calendar_json = parseJson(payload.calendar_json);
+      payload.competitions_json = parseJson(payload.competitions_json);
+      payload.qualification_rules_json = parseJson(payload.qualification_rules_json);
+      payload.qualification_results_json = parseJson(payload.qualification_results_json);
     }
     if (table === 'guest_sessions') payload.auth_user_id = this.authUserId;
     if (table === 'leagues' && typeof payload.admin_code_hash === 'string' && payload.admin_code_hash.startsWith('plain:')) {
@@ -405,6 +414,7 @@ function touchedLeagueIds(previous: Database, next: Database): Set<string> {
     'transfer_history',
     'market_offers',
     'match_simulations',
+    'season_circuits',
     'audit_logs',
   ] as const;
 
@@ -488,6 +498,15 @@ function fromSupabaseRow(table: TableName, row: Record<string, unknown>): Row {
       final_result: JSON.stringify(row.final_result ?? {}),
       player_stats: JSON.stringify(row.player_stats ?? []),
       team_stats: JSON.stringify(row.team_stats ?? {}),
+    } as Row;
+  }
+  if (table === 'season_circuits') {
+    return {
+      ...row,
+      calendar_json: JSON.stringify(row.calendar_json ?? []),
+      competitions_json: JSON.stringify(row.competitions_json ?? []),
+      qualification_rules_json: JSON.stringify(row.qualification_rules_json ?? []),
+      qualification_results_json: JSON.stringify(row.qualification_results_json ?? []),
     } as Row;
   }
   if (table !== 'audit_logs') return row as unknown as Row;

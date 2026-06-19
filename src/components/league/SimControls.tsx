@@ -18,11 +18,11 @@ export function SimControls({ leagueId, compact }: { leagueId: string; compact?:
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {(legacy || phase === 'regular_season') && <Button variant="primary" size={compact ? 'sm' : 'md'} onClick={() => simRegular(leagueId)}>
-        <Play size={15} /> Sim Season
+      {(legacy || ['regular_season', 'second_regional_phase'].includes(phase)) && <Button variant="primary" size={compact ? 'sm' : 'md'} onClick={() => simRegular(leagueId)}>
+        <Play size={15} /> Sim {phase === 'second_regional_phase' ? 'Second Phase' : 'Season'}
       </Button>}
-      {(legacy || phase === 'playoffs') && <Button variant="secondary" size={compact ? 'sm' : 'md'} onClick={() => simPlayoffs(leagueId)}>
-        <Trophy size={15} /> Sim Playoffs
+      {(legacy || ['playoffs', 'msi', 'regional_finals', 'worlds'].includes(phase)) && <Button variant="secondary" size={compact ? 'sm' : 'md'} onClick={() => simPlayoffs(leagueId)}>
+        <Trophy size={15} /> Sim {phase === 'msi' ? 'MSI' : phase === 'worlds' ? 'Worlds' : phase === 'regional_finals' ? 'Regional Finals' : 'Playoffs'}
       </Button>}
       {legacy && <Button variant="outline" size={compact ? 'sm' : 'md'} onClick={() => simFull(leagueId)}>
         <Zap size={15} /> Sim Full

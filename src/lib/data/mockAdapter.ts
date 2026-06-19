@@ -284,6 +284,12 @@ function normalizeMockDatabase(input: Database): Database {
     run_seed: league.run_seed ?? null,
     run_started_at: league.run_started_at ?? null,
     run_completed_at: league.run_completed_at ?? null,
+    competition_mode: league.competition_mode ?? 'regional_season',
+  }));
+  db.matches = db.matches.map((match) => ({
+    ...match,
+    competition_key: match.competition_key ?? null,
+    circuit_stage_key: match.circuit_stage_key ?? null,
   }));
   db.teams = db.teams.map((team) => ({
     ...team,

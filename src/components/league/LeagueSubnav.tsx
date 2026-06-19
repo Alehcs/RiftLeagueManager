@@ -6,12 +6,13 @@ import { cn } from '@/lib/utils';
 import { canAdminister, useLeagueRole, useManagedTeamId } from '@/lib/store/hooks';
 import {
   LayoutGrid, ListOrdered, CalendarDays, Users2, User, GraduationCap, Gamepad2,
-  Store, ArrowLeftRight, Trophy, Settings, Shield,
+  Store, ArrowLeftRight, Trophy, Settings, Shield, Globe2,
 } from 'lucide-react';
 
 const TABS = [
   { seg: 'lobby', label: 'Run', icon: Gamepad2 },
   { seg: '', label: 'Overview', icon: LayoutGrid },
+  { seg: 'competitions', label: 'Circuit', icon: Globe2 },
   { seg: 'standings', label: 'Standings', icon: ListOrdered },
   { seg: 'schedule', label: 'Schedule', icon: CalendarDays },
   { seg: 'teams', label: 'Teams', icon: Users2 },

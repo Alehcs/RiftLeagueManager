@@ -41,6 +41,19 @@ export type TransferType = 'signing' | 'release' | 'trade' | 'sale';
 
 export type AdminRole = 'owner' | 'admin' | 'manager' | 'viewer';
 
+export type CompetitionMode = 'quick_tournament' | 'regional_season' | 'full_circuit';
+export type TournamentType = 'league' | 'bracket' | 'playoffs' | 'international' | 'circuit';
+export type CompetitionScope = 'domestic' | 'international';
+export type CircuitStatus = 'setup' | 'active' | 'completed';
+export type CircuitStageStatus = 'upcoming' | 'active' | 'completed';
+export type QualificationRuleType =
+  | 'top_n_standings'
+  | 'playoff_champion'
+  | 'playoff_finalist'
+  | 'points'
+  | 'region_slots'
+  | 'manual_invite';
+
 export type LeagueRunPhase =
   | 'lobby'
   | 'team_selection'
@@ -50,6 +63,14 @@ export type LeagueRunPhase =
   | 'preseason_week_3'
   | 'regular_season'
   | 'playoffs'
+  | 'msi_qualification'
+  | 'msi'
+  | 'midseason_break'
+  | 'second_regional_phase'
+  | 'regional_finals'
+  | 'worlds'
+  | 'offseason'
+  | 'next_season_setup'
   | 'completed';
 
 export type PlayerCategory = 'Rookie' | 'Prospect' | 'Starter' | 'Pro' | 'Star' | 'Superstar' | 'Legend';
@@ -114,6 +135,7 @@ export interface League {
   run_seed?: string | null;
   run_started_at?: string | null;
   run_completed_at?: string | null;
+  competition_mode?: CompetitionMode;
   // demo / generated flag
   is_seed?: boolean;
   last_imported_at?: string | null;
@@ -253,6 +275,8 @@ export interface Match {
   external_url: string | null;
   source_name: string | null;
   source_url: string | null;
+  competition_key?: string | null;
+  circuit_stage_key?: string | null;
   // bracket linkage for playoffs
   bracket_slot?: string | null; // e.g. "UB-R1-M1", "LB-R2-M2", "GF"
   feeds_winner_to?: string | null; // match id
@@ -374,6 +398,168 @@ export interface MatchSimulation {
   team_stats: string;
 }
 
+// Portable definitions used by generated/demo content and future data packs.
+// Pack IDs and external IDs are intentionally opaque so importing a real or
+// historical data set never depends on this app's generated UUIDs.
+export interface RegionDefinition {
+  key: string;
+  name: string;
+  short_name: string;
+  tier: LeagueTier;
+  parent_region_key?: string | null;
+  data_pack_id?: string | null;
+  external_id?: string | null;
+}
+
+export interface DataPackOrganization {
+  external_id: string;
+  name: string;
+  short_name: string;
+  region_key: string;
+  logo_asset_key?: string | null;
+}
+
+export interface DataPackTeam {
+  external_id: string;
+  organization_external_id: string;
+  name: string;
+  short_name: string;
+  region_key: string;
+  tier: 'tier1' | 'tier2' | 'other';
+  logo_asset_key?: string | null;
+}
+
+export interface DataPackPlayer {
+  external_id: string;
+  nickname: string;
+  real_name: string;
+  nationality: string;
+  birth_date?: string | null;
+  primary_role: Role;
+}
+
+export interface DataPackRosterEntry {
+  team_external_id: string;
+  player_external_id: string;
+  season_key: string;
+  split_key?: string | null;
+  status: PlayerStatus;
+  contract_start?: string | null;
+  contract_end?: string | null;
+  salary?: number | null;
+}
+
+export interface CompetitionDataPack {
+  schema: 'rift-competition-pack/v1';
+  id: string;
+  name: string;
+  version: string;
+  season_keys: string[];
+  tier_scope: Array<'tier1' | 'tier2'>;
+  regions: RegionDefinition[];
+  organizations: DataPackOrganization[];
+  teams: DataPackTeam[];
+  players: DataPackPlayer[];
+  rosters: DataPackRosterEntry[];
+  competitions: CompetitionTemplate[];
+  assets: Record<string, string>;
+}
+
+export interface CompetitionStageDefinition {
+  key: string;
+  name: string;
+  order: number;
+  schedule_type: 'none' | 'round_robin' | 'swiss' | 'single_elim' | 'double_elim';
+  match_format: MatchFormat;
+  advancement: string;
+}
+
+export interface QualificationRuleDefinition {
+  id: string;
+  type: QualificationRuleType;
+  source_competition_key: string;
+  target_competition_key: string;
+  slots: number;
+  region_key?: string | null;
+  manual_team_ids?: string[];
+  label: string;
+}
+
+export interface CompetitionTemplate {
+  key: string;
+  name: string;
+  mode: CompetitionMode;
+  tournament_type: TournamentType;
+  region_scope: 'single_region' | 'multi_region' | 'global';
+  team_count: number | null;
+  stages: CompetitionStageDefinition[];
+  schedule_type: CompetitionStageDefinition['schedule_type'];
+  match_format: MatchFormat;
+  qualification_rules: QualificationRuleDefinition[];
+  advancement_rules: string[];
+  affects_standings: boolean;
+  affects_ranking: boolean;
+  affects_prestige: boolean;
+  scope: CompetitionScope;
+  data_pack_id?: string | null;
+  external_id?: string | null;
+}
+
+export interface CircuitCalendarStage {
+  key: string;
+  name: string;
+  order: number;
+  status: CircuitStageStatus;
+  competition_key: string | null;
+  description: string;
+}
+
+export interface ActiveCompetition {
+  key: string;
+  template_key: string;
+  name: string;
+  tournament_type: TournamentType;
+  scope: CompetitionScope;
+  status: CircuitStageStatus;
+  current_stage_key: string;
+  participant_team_ids: string[];
+  champion_team_id: string | null;
+  stage_progress: StageProgress;
+}
+
+export interface StageProgress {
+  stage_key: string;
+  status: CircuitStageStatus;
+  completed_matches: number;
+  total_matches: number;
+}
+
+export interface QualificationResult {
+  rule_id: string;
+  target_competition_key: string;
+  team_id: string | null;
+  reason: string;
+  status: 'provisional' | 'qualified' | 'manual_required';
+  seed: number;
+}
+
+export interface SeasonCircuit {
+  id: string;
+  league_id: string;
+  schema_version: number;
+  season_key: string;
+  mode: CompetitionMode;
+  status: CircuitStatus;
+  current_stage_key: string;
+  current_competition_key: string | null;
+  calendar_json: string;
+  competitions_json: string;
+  qualification_rules_json: string;
+  qualification_results_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // The full in-memory database shape (also the JSON export/import shape).
 // ---------------------------------------------------------------------------
@@ -393,6 +579,7 @@ export interface Database {
   transfer_history: TransferRecord[];
   market_offers: MarketOffer[];
   match_simulations: MatchSimulation[];
+  season_circuits: SeasonCircuit[];
   import_sources: ImportSource[];
   import_jobs: ImportJob[];
   audit_logs: AuditLog[];
@@ -414,6 +601,7 @@ export const EMPTY_DB: Database = {
   transfer_history: [],
   market_offers: [],
   match_simulations: [],
+  season_circuits: [],
   import_sources: [],
   import_jobs: [],
   audit_logs: [],

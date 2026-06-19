@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bot, Check, ChevronRight, Eye, Gamepad2, Settings2, Shield, Swords, Trophy, UserMinus, Users2, Wallet } from 'lucide-react';
+import { Bot, Check, ChevronRight, Eye, Gamepad2, Globe2, Settings2, Shield, Swords, Trophy, UserMinus, Users2, Wallet } from 'lucide-react';
 import { useCurrentGuestId, useDb, useLeague, useLeagueRole, useManagedTeamId, canAdminister } from '@/lib/store/hooks';
 import { membersOf, teamManager, teamsOf } from '@/lib/store/selectors';
 import { useStore } from '@/lib/store/store';
@@ -14,6 +14,7 @@ import { Button, Card, CardBody, CardHeader, CardTitle, EmptyState, Stat } from 
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/form';
 import { RunPhaseBadge } from '@/components/common/badges';
 import { formatMoney } from '@/lib/utils';
+import { COMPETITION_MODE_META, competitionMode } from '@/services/competition';
 
 export default function LobbyPage({ params }: { params: { leagueId: string } }) {
   const db = useDb();
@@ -82,7 +83,8 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
     free_agent_offer_window_hours: setup.offerWindow,
   });
 
-  const nextLabel = phase === 'team_selection' ? 'Start run' : phase === 'roster_reveal' ? 'Start preseason' : `Advance to ${RUN_PHASE_LABELS[nextRunPhase(league)]}`;
+  const modeMeta = COMPETITION_MODE_META[competitionMode(league)];
+  const nextLabel = phase === 'team_selection' ? 'Start run' : `Advance to ${RUN_PHASE_LABELS[nextRunPhase(league)]}`;
 
   return (
     <div className="space-y-6">
@@ -93,7 +95,7 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
             <h2 className="text-xl font-bold text-slate-100">League run</h2>
             <RunPhaseBadge phase={phase} />
           </div>
-          <p className="mt-1 text-sm text-slate-500">Pick teams, reveal randomized rosters, prepare, and play one shared tournament.</p>
+          <p className="mt-1 text-sm text-slate-500"><span className="font-medium text-slate-300">{modeMeta.label}:</span> {modeMeta.description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {watchSimulation && (
@@ -101,6 +103,7 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
               <Button variant={watchSimulation.status === 'running' ? 'primary' : 'outline'}><Eye size={15} /> {watchSimulation.status === 'running' ? 'Watch live match' : 'Latest replay'}</Button>
             </Link>
           )}
+          <Link href={`/leagues/${league.id}/competitions`}><Button variant="outline"><Globe2 size={15} /> Circuit</Button></Link>
           {phase === 'roster_reveal' && (
             <Link href={`/leagues/${league.id}/reveal`}><Button variant="gold"><Eye size={15} /> Open roster reveal</Button></Link>
           )}
@@ -187,7 +190,7 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
         </div>
       )}
 
-      {['regular_season', 'playoffs', 'completed'].includes(phase) && (
+      {['regular_season', 'playoffs', 'msi_qualification', 'msi', 'midseason_break', 'second_regional_phase', 'regional_finals', 'worlds', 'offseason', 'next_season_setup', 'completed'].includes(phase) && (
         <Card><CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="flex items-center gap-2 font-semibold text-slate-200">{phase === 'completed' ? <><Trophy size={17} className="text-rift-gold" /> Champion: {champion?.name ?? 'Tournament complete'}</> : 'Tournament in progress'}</h3><p className="text-sm text-slate-500">Official simulations are admin-controlled and saved for every manager and viewer.</p></div><Link href={`/leagues/${league.id}/schedule`}><Button variant="primary">Open match center <ChevronRight size={14} /></Button></Link></CardBody></Card>
       )}
     </div>

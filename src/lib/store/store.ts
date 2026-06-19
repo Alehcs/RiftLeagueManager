@@ -52,6 +52,13 @@ import {
   revertMatchConsequences,
   runPhase,
 } from '@/services/run';
+import {
+  createSeasonCircuit,
+  parseQualificationResults,
+  phaseCompetitionKey,
+  syncSeasonCircuit,
+  tagCompetitionMatches,
+} from '@/services/competition';
 
 export interface Toast {
   id: string;
@@ -445,6 +452,20 @@ export const useStore = create<StoreState>((set, get) => {
     if (m.feeds_loser_to && loserId) fill(m.feeds_loser_to, loserId);
   };
 
+  const syncCircuitInDb = (leagueId: string) => {
+    const db = get().db;
+    const league = db.leagues.find((item) => item.id === leagueId);
+    if (!league) return;
+    let circuit = db.season_circuits.find((item) => item.league_id === leagueId);
+    if (!circuit) {
+      circuit = createSeasonCircuit(league);
+      db.season_circuits.push(circuit);
+    }
+    const teams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
+    const matches = db.matches.filter((match) => match.league_id === leagueId);
+    Object.assign(circuit, syncSeasonCircuit(circuit, league, teams, matches));
+  };
+
   return {
     db: EMPTY_DB,
     rev: 0,
@@ -621,6 +642,7 @@ export const useStore = create<StoreState>((set, get) => {
         run_seed: null,
         run_started_at: null,
         run_completed_at: null,
+        competition_mode: input.competition_mode ?? 'regional_season',
         is_seed: false,
         last_imported_at: null,
         created_at: ts,
@@ -630,6 +652,7 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           db.leagues.push(league);
+          db.season_circuits.push(createSeasonCircuit(league));
           db.league_admins.push({ id: uid('la'), league_id: id, guest_id: get().currentGuestId, role: 'owner', team_id: null });
           db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: ts });
         },
@@ -645,6 +668,7 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           db.leagues.push(...slices.leagues);
+          db.season_circuits.push(createSeasonCircuit(slices.leagues[0]));
           db.league_admins.push(...slices.league_admins);
           db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: nowISO() });
           db.teams.push(...slices.teams);
@@ -676,6 +700,7 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           db.leagues.push(...slices.leagues);
+          db.season_circuits.push(createSeasonCircuit(slices.leagues[0]));
           db.league_admins.push(...slices.league_admins);
           db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: nowISO() });
           db.teams.push(...slices.teams);
@@ -705,6 +730,7 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           db.leagues.push(...slices.leagues);
+          db.season_circuits.push(createSeasonCircuit(slices.leagues[0]));
           db.league_admins.push(...slices.league_admins);
           db.league_members.push({ id: uid('member'), league_id: id, guest_id: get().currentGuestId, role: 'owner', joined_at: nowISO() });
           db.teams.push(...slices.teams);
@@ -751,6 +777,7 @@ export const useStore = create<StoreState>((set, get) => {
           db.transfer_history = db.transfer_history.filter((th) => th.league_id !== id);
           db.market_offers = db.market_offers.filter((offer) => offer.league_id !== id);
           db.match_simulations = db.match_simulations.filter((simulation) => simulation.league_id !== id);
+          db.season_circuits = db.season_circuits.filter((circuit) => circuit.league_id !== id);
         },
         { toast: { kind: 'info', message: `Deleted "${name}"` } },
       );
@@ -786,6 +813,7 @@ export const useStore = create<StoreState>((set, get) => {
             m.updated_at = nowISO();
           }
           recomputeStandings(id);
+          syncCircuitInDb(id);
         },
         { toast: { kind: 'info', message: 'League results reset' } },
       );
@@ -804,8 +832,10 @@ export const useStore = create<StoreState>((set, get) => {
           db.games = db.games.filter((g) => !oldIds.has(g.match_id));
           db.matches = db.matches.filter((m) => m.league_id !== id);
           const fresh = generateSchedule(league, teams, { start: new Date() });
-          db.matches.push(...fresh);
+          const competitionKey = phaseCompetitionKey(league) ?? (league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_league');
+          db.matches.push(...tagCompetitionMatches(fresh, competitionKey, league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_regular_season'));
           recomputeStandings(id);
+          syncCircuitInDb(id);
         },
         { toast: { kind: 'success', message: 'Schedule regenerated' } },
       );
@@ -845,20 +875,45 @@ export const useStore = create<StoreState>((set, get) => {
         const target = db.leagues.find((item) => item.id === leagueId);
         if (!target) return;
         if (isPreseason(runPhase(target))) resolveOffersInDb(leagueId, true);
+        syncCircuitInDb(leagueId);
         target.run_phase = next;
         target.current_run_week = next.startsWith('preseason_week_') ? Number(next.slice(-1)) : next === 'regular_season' ? 1 : target.current_run_week ?? 0;
-        if (next === 'playoffs' && !db.matches.some((match) => match.league_id === leagueId && ['playoffs', 'final'].includes(match.stage))) {
-          const activeTeams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
-          const table = standingsTable(activeTeams, db.matches.filter((match) => match.league_id === leagueId));
-          const bracketSize = activeTeams.length >= 8 ? 8 : activeTeams.length >= 4 ? 4 : 2;
-          const seeds = table.slice(0, bracketSize).map((row) => row.team.id);
-          if (seeds.length >= 2) db.matches.push(...generateSingleElim(leagueId, seeds, 'BO5', new Date()));
+        const activeTeams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
+        const table = standingsTable(activeTeams, db.matches.filter((match) => match.league_id === leagueId));
+        const bracketSeeds = (ids: string[]) => ids.slice(0, ids.length >= 8 ? 8 : ids.length >= 4 ? 4 : 2);
+        const addBracket = (competitionKey: string, stageKey: string, seeds: string[]) => {
+          if (db.matches.some((match) => match.league_id === leagueId && match.competition_key === competitionKey && ['playoffs', 'final'].includes(match.stage))) return;
+          const selected = bracketSeeds(seeds);
+          if (selected.length >= 2) db.matches.push(...tagCompetitionMatches(generateSingleElim(leagueId, selected, 'BO5', new Date()), competitionKey, stageKey));
+        };
+        if (next === 'playoffs') {
+          const competitionKey = target.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_playoffs';
+          const existingBracket = db.matches.some((match) => match.league_id === leagueId && match.competition_key === competitionKey && ['playoffs', 'final'].includes(match.stage));
+          if (!existingBracket) addBracket(competitionKey, target.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_playoffs', table.map((row) => row.team.id));
+        }
+        if (next === 'msi') {
+          syncCircuitInDb(leagueId);
+          const circuit = db.season_circuits.find((item) => item.league_id === leagueId);
+          const qualified = circuit ? parseQualificationResults(circuit).filter((result) => result.target_competition_key === 'msi' && result.team_id).map((result) => result.team_id as string) : [];
+          addBracket('msi', 'msi', qualified.length >= 2 ? qualified : table.slice(0, 2).map((row) => row.team.id));
+        }
+        if (next === 'second_regional_phase' && !db.matches.some((match) => match.league_id === leagueId && match.competition_key === 'second_regional_phase')) {
+          const schedule = generateSchedule(target, activeTeams, { start: new Date() }).filter((match) => ['regular_season', 'group_stage', 'swiss'].includes(match.stage));
+          db.matches.push(...tagCompetitionMatches(schedule, 'second_regional_phase', 'second_regional_phase'));
+        }
+        if (next === 'regional_finals') addBracket('regional_finals', 'regional_finals', table.map((row) => row.team.id));
+        if (next === 'worlds') {
+          syncCircuitInDb(leagueId);
+          const circuit = db.season_circuits.find((item) => item.league_id === leagueId);
+          const qualified = circuit ? parseQualificationResults(circuit).filter((result) => result.target_competition_key === 'worlds' && result.team_id).map((result) => result.team_id as string) : [];
+          addBracket('worlds', 'worlds', qualified.length >= 2 ? qualified : table.slice(0, Math.min(4, table.length)).map((row) => row.team.id));
         }
         if (runPhase(target) !== 'roster_reveal') {
           db.players.filter((player) => player.league_id === leagueId).forEach((player) => { player.hidden_until_reveal = false; });
         }
         if (next === 'completed') target.run_completed_at = nowISO();
         target.updated_at = nowISO();
+        syncCircuitInDb(leagueId);
       }, { toast: { kind: 'success', message: `Run advanced to ${next.replaceAll('_', ' ')}` } });
     },
 
@@ -918,12 +973,15 @@ export const useStore = create<StoreState>((set, get) => {
           team.bot_manager_name = null;
         });
         db.players.push(...generateFreeAgents(league, runSeed));
-        db.matches.push(...generateSchedule(league, activeTeams, { start: new Date() }));
+        const competitionKey = league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_league';
+        const stageKey = league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_regular_season';
+        db.matches.push(...tagCompetitionMatches(generateSchedule(league, activeTeams, { start: new Date() }), competitionKey, stageKey));
         league.run_phase = 'roster_reveal';
         league.run_seed = runSeed;
         league.run_started_at = nowISO();
         league.current_run_week = 0;
         league.updated_at = nowISO();
+        syncCircuitInDb(leagueId);
       }, { toast: { kind: 'success', message: 'Run started. Rosters are ready to reveal.' } });
     },
 
@@ -1219,8 +1277,12 @@ export const useStore = create<StoreState>((set, get) => {
       if (!m) return;
       if (!requireAdmin(m.league_id, 'simulate matches')) return;
       const league = get().db.leagues.find((item) => item.id === m.league_id);
-      if (league?.run_started_at && !['regular_season', 'playoffs'].includes(runPhase(league))) {
+      if (league?.run_started_at && !['regular_season', 'playoffs', 'msi', 'second_regional_phase', 'regional_finals', 'worlds'].includes(runPhase(league))) {
         reportError(new Error('Official matches start after preseason.'));
+        return;
+      }
+      if (league?.run_started_at && m.competition_key && phaseCompetitionKey(league) !== m.competition_key) {
+        reportError(new Error('This match belongs to a different circuit stage.'));
         return;
       }
       commit(
@@ -1233,7 +1295,10 @@ export const useStore = create<StoreState>((set, get) => {
       window.setTimeout(() => {
         const running = get().db.match_simulations.some((simulation) => simulation.match_id === matchId && simulation.status === 'running');
         if (!running) return;
-        commit(() => finishMatchSimulation(matchId), { toast: { kind: 'match', message: 'Match simulation completed' } });
+        commit(() => {
+          finishMatchSimulation(matchId);
+          syncCircuitInDb(m.league_id);
+        }, { toast: { kind: 'match', message: 'Match simulation completed' } });
       }, 1800);
     },
     resetMatch(matchId) {
@@ -1253,6 +1318,7 @@ export const useStore = create<StoreState>((set, get) => {
         m.winner_team_id = null;
         m.updated_at = nowISO();
         recomputeStandings(m.league_id);
+        syncCircuitInDb(m.league_id);
       }, { toast: { kind: 'info', message: 'Match reset' } });
     },
     setMatchResult(matchId, blueScore, redScore) {
@@ -1270,6 +1336,7 @@ export const useStore = create<StoreState>((set, get) => {
           m.updated_at = nowISO();
           if (m.winner_team_id) advanceBracket(m);
           recomputeStandings(m.league_id);
+          syncCircuitInDb(m.league_id);
         },
         { toast: { kind: 'match', message: `Result saved: ${resultToast(get().db, matchId)}` } },
       );
@@ -1277,7 +1344,7 @@ export const useStore = create<StoreState>((set, get) => {
     simulateWeek(leagueId, week) {
       if (!requireAdmin(leagueId, 'simulate matches')) return;
       const league0 = get().db.leagues.find((item) => item.id === leagueId);
-      if (league0?.run_started_at && runPhase(league0) !== 'regular_season') {
+      if (league0?.run_started_at && !['regular_season', 'second_regional_phase'].includes(runPhase(league0))) {
         reportError(new Error('Official weeks can only run during the regular season.'));
         return;
       }
@@ -1285,11 +1352,13 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           resolveOffersInDb(leagueId, true);
-          const toPlay = db.matches.filter((m) => m.league_id === leagueId && m.week === week && m.status !== 'completed' && m.blue_team_id && m.red_team_id);
+          const activeCompetition = league0 ? phaseCompetitionKey(league0) : null;
+          const toPlay = db.matches.filter((m) => m.league_id === leagueId && (!activeCompetition || !m.competition_key || m.competition_key === activeCompetition) && m.week === week && m.status !== 'completed' && m.blue_team_id && m.red_team_id);
           toPlay.forEach((m) => playMatch(m));
           const league = db.leagues.find((item) => item.id === leagueId);
           if (league) { league.current_run_week = week + 1; league.updated_at = nowISO(); }
           recomputeStandings(leagueId);
+          syncCircuitInDb(leagueId);
         },
         { toast: { kind: 'match', message: `Week ${week} simulated` } },
       );
@@ -1297,7 +1366,7 @@ export const useStore = create<StoreState>((set, get) => {
     simulateRegularSeason(leagueId) {
       if (!requireAdmin(leagueId, 'simulate the season')) return;
       const league0 = get().db.leagues.find((item) => item.id === leagueId);
-      if (league0?.run_started_at && runPhase(league0) !== 'regular_season') {
+      if (league0?.run_started_at && !['regular_season', 'second_regional_phase'].includes(runPhase(league0))) {
         reportError(new Error('Advance the run to the regular season first.'));
         return;
       }
@@ -1305,9 +1374,10 @@ export const useStore = create<StoreState>((set, get) => {
         () => {
           const db = get().db;
           const league = db.leagues.find((l) => l.id === leagueId)!;
+          const activeCompetition = phaseCompetitionKey(league);
           // regular/group: play all
           db.matches
-            .filter((m) => m.league_id === leagueId && ['regular_season', 'group_stage'].includes(m.stage) && m.status !== 'completed' && m.blue_team_id && m.red_team_id)
+            .filter((m) => m.league_id === leagueId && (!activeCompetition || !m.competition_key || m.competition_key === activeCompetition) && ['regular_season', 'group_stage'].includes(m.stage) && m.status !== 'completed' && m.blue_team_id && m.red_team_id)
             .forEach((m) => playMatch(m));
           // swiss: iteratively play + generate next rounds (cap 5 rounds)
           if (league.format === 'swiss') {
@@ -1324,6 +1394,7 @@ export const useStore = create<StoreState>((set, get) => {
             }
           }
           recomputeStandings(leagueId);
+          syncCircuitInDb(leagueId);
         },
         { toast: { kind: 'match', message: 'Regular season simulated' } },
       );
@@ -1331,21 +1402,23 @@ export const useStore = create<StoreState>((set, get) => {
     simulatePlayoffs(leagueId) {
       if (!requireAdmin(leagueId, 'simulate playoffs')) return;
       const league0 = get().db.leagues.find((item) => item.id === leagueId);
-      if (league0?.run_started_at && runPhase(league0) !== 'playoffs') {
+      if (league0?.run_started_at && !['playoffs', 'msi', 'regional_finals', 'worlds'].includes(runPhase(league0))) {
         reportError(new Error('Advance the run to playoffs first.'));
         return;
       }
       commit(
         () => {
           const db = get().db;
+          const activeCompetition = league0 ? phaseCompetitionKey(league0) : null;
           // play bracket matches in passes until stable
           for (let pass = 0; pass < 12; pass++) {
-            const ready = db.matches.filter((m) => m.league_id === leagueId && ['playoffs', 'final'].includes(m.stage) && m.status !== 'completed' && m.blue_team_id && m.red_team_id);
+            const ready = db.matches.filter((m) => m.league_id === leagueId && (!activeCompetition || !m.competition_key || m.competition_key === activeCompetition) && ['playoffs', 'final'].includes(m.stage) && m.status !== 'completed' && m.blue_team_id && m.red_team_id);
             if (!ready.length) break;
             ready.sort((a, b) => a.week - b.week || a.match_day - b.match_day);
             ready.forEach((m) => playMatch(m));
           }
           recomputeStandings(leagueId);
+          syncCircuitInDb(leagueId);
         },
         { toast: { kind: 'match', message: 'Playoffs simulated' } },
       );
@@ -1417,7 +1490,9 @@ export const useStore = create<StoreState>((set, get) => {
             opts.type === 'double'
               ? generateDoubleElim(leagueId, seeds, fmt, new Date())
               : generateSingleElim(leagueId, seeds, fmt, new Date());
-          db.matches.push(...fresh);
+          const competitionKey = phaseCompetitionKey(league) ?? (league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_playoffs');
+          db.matches.push(...tagCompetitionMatches(fresh, competitionKey, competitionKey));
+          syncCircuitInDb(leagueId);
         },
         { toast: { kind: 'success', message: `${opts.type === 'double' ? 'Double' : 'Single'}-elim playoffs generated (top ${opts.size})` } },
       );

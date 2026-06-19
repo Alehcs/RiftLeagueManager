@@ -2,16 +2,17 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Wand2, Copy, FileJson, Sparkles, Plus } from 'lucide-react';
+import { Wand2, Copy, FileJson, Sparkles, Plus, Timer, Map, Globe2 } from 'lucide-react';
 import { useDb } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { PageContainer } from '@/components/common/layout';
 import { Card, CardBody, Button } from '@/components/ui/primitives';
 import { Field, Input, Select, Textarea } from '@/components/ui/form';
 import { LEAGUE_FORMAT_OPTIONS, FORMAT_META, TIER_META } from '@/lib/constants';
-import type { LeagueFormat, LeagueTier } from '@/lib/types';
+import type { CompetitionMode, LeagueFormat, LeagueTier } from '@/lib/types';
 import { cn, teamShortName } from '@/lib/utils';
 import { TierBadge } from '@/components/common/badges';
+import { COMPETITION_MODE_META } from '@/services/competition';
 
 type Mode = 'manual' | 'clone' | 'json';
 
@@ -27,7 +28,7 @@ export default function NewLeaguePage() {
   const [mode, setMode] = useState<Mode>('manual');
 
   // manual state
-  const [form, setForm] = useState({ name: '', region: 'Custom', tier: 'custom' as LeagueTier, season: '2025', format: 'double_round_robin_bo1' as LeagueFormat, adminCode: '' });
+  const [form, setForm] = useState({ name: '', region: 'Custom', tier: 'custom' as LeagueTier, season: '2026', format: 'double_round_robin_bo1' as LeagueFormat, competition_mode: 'regional_season' as CompetitionMode, adminCode: '' });
   const [teamLines, setTeamLines] = useState('');
   const [genSchedule, setGenSchedule] = useState(true);
 
@@ -97,6 +98,24 @@ export default function NewLeaguePage() {
       {mode === 'manual' && (
         <Card>
           <CardBody className="space-y-3">
+            <Field label="Competition mode">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  { id: 'quick_tournament', icon: Timer },
+                  { id: 'regional_season', icon: Map },
+                  { id: 'full_circuit', icon: Globe2 },
+                ] as const).map(({ id, icon: Icon }) => {
+                  const meta = COMPETITION_MODE_META[id];
+                  const active = form.competition_mode === id;
+                  return (
+                    <button key={id} type="button" onClick={() => setF({ competition_mode: id })} className={cn('rounded-lg border p-3 text-left transition-colors', active ? 'border-rift-cyan bg-rift-cyan/10' : 'border-border bg-bg-soft/30 hover:border-border-soft')}>
+                      <div className={cn('mb-1 flex items-center gap-2 text-sm font-semibold', active ? 'text-rift-cyan' : 'text-slate-200')}><Icon size={15} /> {meta.label}</div>
+                      <p className="text-xs leading-relaxed text-slate-500">{meta.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="League name *" className="col-span-2"><Input value={form.name} onChange={(e) => setF({ name: e.target.value })} placeholder="My Custom League" /></Field>
               <Field label="Region"><Input value={form.region} onChange={(e) => setF({ region: e.target.value })} /></Field>
