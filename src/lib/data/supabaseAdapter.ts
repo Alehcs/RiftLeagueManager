@@ -295,7 +295,20 @@ export class SupabaseAdapter implements DataAdapter {
     for (const batch of chunks(rows, 200)) {
       const payload = await Promise.all(batch.map((row) => this.toSupabaseRow(table, row)));
       const { error } = await this.client.from(table).insert(payload);
-      if (error) throw new Error(dbError('insert', table, error.message));
+      if (!error) continue;
+      // Writes are full-row snapshots diffed against a client snapshot that can
+      // lag the server: a burst of writes (e.g. creating a league + its teams)
+      // can race the realtime reload and re-attempt a row an earlier queued write
+      // already inserted. On a primary-key conflict, re-apply the snapshot as an
+      // upsert so the batch converges instead of aborting and skipping later
+      // writes. Plain insert is kept for the normal path so RLS insert policies
+      // (which upsert's ON CONFLICT DO UPDATE would also gate on UPDATE) still apply.
+      if (error.code === '23505') {
+        const { error: upsertError } = await this.client.from(table).upsert(payload);
+        if (upsertError) throw new Error(dbError('insert', table, upsertError.message));
+        continue;
+      }
+      throw new Error(dbError('insert', table, error.message));
     }
   }
 
