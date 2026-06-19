@@ -67,6 +67,9 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
   const friendlyOpponents = activeTeams.filter((team) => team.id !== managedTeamId);
   const finalMatch = db.matches.filter((match) => match.league_id === league.id && match.stage === 'final' && match.status === 'completed').sort((a, b) => b.week - a.week)[0];
   const champion = teams.find((team) => team.id === finalMatch?.winner_team_id);
+  const watchSimulation = db.match_simulations
+    .filter((simulation) => simulation.league_id === league.id)
+    .sort((a, b) => (a.status === 'running' ? -1 : b.status === 'running' ? 1 : +new Date(b.started_at) - +new Date(a.started_at)))[0];
 
   const saveSetup = () => updateSetup(league.id, {
     starting_budget: setup.startingBudget,
@@ -93,6 +96,11 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
           <p className="mt-1 text-sm text-slate-500">Pick teams, reveal randomized rosters, prepare, and play one shared tournament.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {watchSimulation && (
+            <Link href={`/leagues/${league.id}/matches/${watchSimulation.match_id}/viewer`}>
+              <Button variant={watchSimulation.status === 'running' ? 'primary' : 'outline'}><Eye size={15} /> {watchSimulation.status === 'running' ? 'Watch live match' : 'Latest replay'}</Button>
+            </Link>
+          )}
           {phase === 'roster_reveal' && (
             <Link href={`/leagues/${league.id}/reveal`}><Button variant="gold"><Eye size={15} /> Open roster reveal</Button></Link>
           )}

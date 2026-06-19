@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Play, RotateCcw, Save, Swords, Clock, Coins } from 'lucide-react';
+import { ChevronLeft, Play, RotateCcw, Save, Swords, Clock, Coins, Eye } from 'lucide-react';
 import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { teamById, gamesOf, playersOf, coachesOf, simulationOf } from '@/lib/store/selectors';
@@ -50,9 +50,14 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
 
   return (
     <div className="space-y-6">
-      <Link href={`/leagues/${league.id}/schedule`} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
-        <ChevronLeft size={14} /> Schedule
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link href={`/leagues/${league.id}/schedule`} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
+          <ChevronLeft size={14} /> Schedule
+        </Link>
+        <Link href={`/leagues/${league.id}/matches/${match.id}/viewer`}>
+          <Button variant={simulation ? 'primary' : 'outline'} size="sm"><Eye size={14} /> {simulation ? (isDone ? 'Watch replay' : 'Watch live') : 'Open match viewer'}</Button>
+        </Link>
+      </div>
 
       {/* Scoreboard */}
       <Card className="overflow-hidden">
@@ -109,6 +114,7 @@ export default function MatchDetailPage({ params }: { params: { leagueId: string
             <Button variant="primary" size="sm" disabled={match.status !== 'scheduled'} onClick={() => simulate(match.id)}>
               <Play size={14} /> Start match
             </Button>
+            <Link href={`/leagues/${league.id}/matches/${match.id}/viewer`}><Button variant="outline" size="sm"><Eye size={14} /> Viewer</Button></Link>
             <Button variant="ghost" size="sm" onClick={() => reset(match.id)}>
               <RotateCcw size={14} /> Reset
             </Button>

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Eye } from 'lucide-react';
 import { cn, formatDateTime } from '@/lib/utils';
 import type { Match } from '@/lib/types';
 import { useDb } from '@/lib/store/hooks';
@@ -34,42 +35,45 @@ export function MatchCard({ match, leagueId }: { match: Match; leagueId: string 
   const redWon = isDone && match.winner_team_id === match.red_team_id;
 
   return (
-    <Link
-      href={`/leagues/${leagueId}/matches/${match.id}`}
-      className="block rounded-xl border border-border bg-bg-card/70 p-3 transition-all hover:border-border-soft hover:bg-bg-elevated/70"
-    >
-      <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
-        <span className="flex items-center gap-1.5">
-          {match.bracket_slot ? (
-            <Badge color="#8b5cf6">{match.bracket_slot}</Badge>
-          ) : (
-            <span>Week {match.week}</span>
-          )}
-          <Badge color="#64748b">{match.format}</Badge>
-        </span>
-        <MatchStatusBadge status={match.status} />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Side teamId={match.blue_team_id} score={match.blue_score} winner={blueWon} align="left" />
-        <div className="shrink-0 px-1">
-          {isDone ? (
-            <div className="flex items-center gap-1 text-lg font-bold tabular-nums">
-              <span className={blueWon ? 'text-rift-cyan' : 'text-slate-500'}>{match.blue_score}</span>
-              <span className="text-slate-600">:</span>
-              <span className={redWon ? 'text-rift-cyan' : 'text-slate-500'}>{match.red_score}</span>
-            </div>
-          ) : (
-            <span className="text-xs font-medium text-slate-600">vs</span>
-          )}
+    <div className="rounded-xl border border-border bg-bg-card/70 p-3 transition-all hover:border-border-soft hover:bg-bg-elevated/70">
+      <Link href={`/leagues/${leagueId}/matches/${match.id}`} className="block">
+        <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
+          <span className="flex items-center gap-1.5">
+            {match.bracket_slot ? (
+              <Badge color="#8b5cf6">{match.bracket_slot}</Badge>
+            ) : (
+              <span>Week {match.week}</span>
+            )}
+            <Badge color="#64748b">{match.format}</Badge>
+          </span>
+          <MatchStatusBadge status={match.status} />
         </div>
-        <Side teamId={match.red_team_id} score={match.red_score} winner={redWon} align="right" />
-      </div>
 
-      {match.date_time && !isDone && (
-        <div className="mt-2 text-center text-[11px] text-slate-600">{formatDateTime(match.date_time)}</div>
+        <div className="flex items-center gap-2">
+          <Side teamId={match.blue_team_id} score={match.blue_score} winner={blueWon} align="left" />
+          <div className="shrink-0 px-1">
+            {isDone ? (
+              <div className="flex items-center gap-1 text-lg font-bold tabular-nums">
+                <span className={blueWon ? 'text-rift-cyan' : 'text-slate-500'}>{match.blue_score}</span>
+                <span className="text-slate-600">:</span>
+                <span className={redWon ? 'text-rift-cyan' : 'text-slate-500'}>{match.red_score}</span>
+              </div>
+            ) : (
+              <span className="text-xs font-medium text-slate-600">vs</span>
+            )}
+          </div>
+          <Side teamId={match.red_team_id} score={match.red_score} winner={redWon} align="right" />
+        </div>
+
+        {match.date_time && !isDone && (
+          <div className="mt-2 text-center text-[11px] text-slate-600">{formatDateTime(match.date_time)}</div>
+        )}
+      </Link>
+      {simulation && (
+        <Link href={`/leagues/${leagueId}/matches/${match.id}/viewer`} className="mt-2 flex items-center justify-center gap-1.5 border-t border-border pt-2 text-[11px] font-semibold text-rift-cyan hover:text-cyan-200">
+          <Eye size={12} /> {isDone ? 'Watch replay' : 'Watch live simulation'}
+        </Link>
       )}
-      {simulation && <div className="mt-2 text-center text-[11px] font-medium text-rift-cyan">{isDone ? 'Watch replay' : 'Watch simulation'}</div>}
-    </Link>
+    </div>
   );
 }

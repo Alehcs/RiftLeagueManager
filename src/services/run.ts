@@ -204,23 +204,129 @@ export function offerScore(offer: MarketOffer, player: Player, team: Team, seed:
 
 export interface TimelineEvent {
   minute: number;
-  type: 'objective' | 'kill' | 'lead' | 'result';
+  type: 'movement' | 'objective' | 'kill' | 'fight' | 'lead' | 'result';
   text: string;
+  game_number?: number;
+  in_game_minute?: number;
+  side?: 'blue' | 'red';
+  player_id?: string;
+  objective?: 'dragon' | 'herald' | 'baron' | 'tower' | 'nexus';
+  action?: 'laning' | 'farming' | 'roaming' | 'ganking' | 'fighting' | 'objective' | 'pushing';
 }
 
-export function buildTimeline(match: Match, result: MatchSimResult, blue: Team, red: Team, seed: string): TimelineEvent[] {
+export function buildTimeline(
+  match: Match,
+  result: MatchSimResult,
+  blue: Team,
+  red: Team,
+  seed: string,
+  players: Player[] = [],
+): TimelineEvent[] {
   const rng = new Rng(`timeline:${seed}`);
   const events: TimelineEvent[] = [];
+  const rosters = {
+    blue: players.filter((player) => player.team_id === blue.id && player.status === 'active'),
+    red: players.filter((player) => player.team_id === red.id && player.status === 'active'),
+  };
+  let offset = 0;
   for (const game of result.games) {
-    const winner = game.winner === 'blue' ? blue : red;
-    events.push({ minute: 4 + rng.int(0, 3), type: 'kill', text: `Game ${game.game_number}: ${winner.short_name} finds first blood.` });
-    events.push({ minute: 12 + rng.int(0, 5), type: 'objective', text: `${winner.short_name} secures the first major objective.` });
-    events.push({ minute: Math.max(18, game.duration_minutes - rng.int(5, 9)), type: 'lead', text: `${winner.short_name} takes control of the map.` });
-    events.push({ minute: game.duration_minutes, type: 'result', text: `${winner.short_name} wins game ${game.game_number}.` });
+    const winnerSide = game.winner;
+    const loserSide = winnerSide === 'blue' ? 'red' : 'blue';
+    const winner = winnerSide === 'blue' ? blue : red;
+    const loser = loserSide === 'blue' ? blue : red;
+    const actor = rng.pick(rosters[winnerSide].length ? rosters[winnerSide] : players);
+    const jungler = rosters[winnerSide].find((player) => player.role === 'JUNGLE') ?? actor;
+    const carry = rosters[winnerSide].find((player) => ['MID', 'ADC'].includes(player.role)) ?? actor;
+    const objectiveSide = rng.bool(0.72) ? winnerSide : loserSide;
+    const objectiveTeam = objectiveSide === 'blue' ? blue : red;
+    const add = (
+      inGameMinute: number,
+      type: TimelineEvent['type'],
+      text: string,
+      details: Omit<TimelineEvent, 'minute' | 'type' | 'text' | 'game_number' | 'in_game_minute'> = {},
+    ) => events.push({
+      minute: offset + inGameMinute,
+      in_game_minute: inGameMinute,
+      game_number: game.game_number,
+      type,
+      text,
+      ...details,
+    });
+
+    add(1, 'movement', `Game ${game.game_number}: both teams settle into their lanes.`, { action: 'laning' });
+    add(4 + rng.int(0, 2), 'kill', `${jungler?.nickname ?? winner.short_name} turns an early gank into first blood for ${winner.short_name}.`, {
+      side: winnerSide,
+      player_id: jungler?.id,
+      action: 'ganking',
+    });
+    add(8 + rng.int(0, 2), 'objective', `${objectiveTeam.short_name} secures the first dragon after forcing river control.`, {
+      side: objectiveSide,
+      objective: 'dragon',
+      action: 'objective',
+    });
+    add(12 + rng.int(0, 2), 'objective', `${winner.short_name} converts top-side pressure into the Rift Herald.`, {
+      side: winnerSide,
+      objective: 'herald',
+      action: 'objective',
+    });
+    add(Math.min(16, game.duration_minutes - 8), 'objective', `${winner.short_name} breaks the first tower and opens the map.`, {
+      side: winnerSide,
+      objective: 'tower',
+      action: 'pushing',
+    });
+    add(Math.min(20, game.duration_minutes - 6), 'fight', `${loser.short_name} contests mid, but ${carry?.nickname ?? winner.short_name} swings the skirmish for ${winner.short_name}.`, {
+      side: winnerSide,
+      player_id: carry?.id,
+      action: 'fighting',
+    });
+    if (game.duration_minutes >= 27) {
+      add(game.duration_minutes - 6, 'objective', `${winner.short_name} wins the vision battle and claims Baron.`, {
+        side: winnerSide,
+        objective: 'baron',
+        action: 'objective',
+      });
+    }
+    add(game.duration_minutes - 3, 'lead', `${winner.short_name} groups for the final push.`, {
+      side: winnerSide,
+      action: 'pushing',
+    });
+    add(game.duration_minutes, 'result', `${winner.short_name} destroys the nexus and wins game ${game.game_number}.`, {
+      side: winnerSide,
+      objective: 'nexus',
+      action: 'pushing',
+    });
+    offset += game.duration_minutes + 3;
   }
   const seriesWinner = result.winner === 'blue' ? blue : red;
-  events.push({ minute: Math.max(...result.games.map((game) => game.duration_minutes)) + 1, type: 'result', text: `${seriesWinner.name} wins ${result.blue_score}-${result.red_score}.` });
+  events.push({
+    minute: Math.max(1, offset - 2),
+    type: 'result',
+    text: `${seriesWinner.name} wins the ${match.format} series ${result.blue_score}-${result.red_score}.`,
+    side: result.winner,
+  });
   return events;
+}
+
+function distributeTeamTotal(
+  total: number,
+  roster: Player[],
+  seed: string,
+  roleWeights: Partial<Record<Role, number>>,
+): Map<string, number> {
+  if (roster.length === 0) return new Map();
+  const weighted = roster.map((player) => {
+    const variance = new Rng(`${seed}:${player.id}`).range(0.88, 1.12);
+    return { player, weight: (roleWeights[player.role] ?? 1) * variance };
+  });
+  const weightTotal = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  const allocations = weighted.map((entry) => {
+    const exact = total * entry.weight / weightTotal;
+    return { player: entry.player, value: Math.floor(exact), fraction: exact - Math.floor(exact) };
+  });
+  let remaining = total - allocations.reduce((sum, entry) => sum + entry.value, 0);
+  allocations.sort((a, b) => b.fraction - a.fraction);
+  for (let index = 0; index < allocations.length && remaining > 0; index++, remaining--) allocations[index].value++;
+  return new Map(allocations.map((entry) => [entry.player.id, entry.value]));
 }
 
 export function buildSimulation(
@@ -234,7 +340,44 @@ export function buildSimulation(
   players: Player[] = [],
 ): MatchSimulation {
   const started = nowISO();
-  const timeline = buildTimeline(match, result, blue, red, seed);
+  const timeline = buildTimeline(match, result, blue, red, seed, players);
+  const totalDuration = result.games.reduce((sum, game) => sum + game.duration_minutes, 0);
+  const teamTotals = {
+    [blue.id]: {
+      kills: result.games.reduce((sum, game) => sum + game.blue_kills, 0),
+      gold: result.games.reduce((sum, game) => sum + game.blue_gold, 0),
+      towers: result.games.reduce((sum, game) => sum + (game.winner === 'blue' ? 8 : 3), 0),
+      dragons: result.games.reduce((sum, game) => sum + (game.winner === 'blue' ? 3 : 1), 0),
+      barons: result.games.filter((game) => game.winner === 'blue' && game.duration_minutes >= 27).length,
+      heralds: result.games.filter((game) => game.winner === 'blue').length,
+    },
+    [red.id]: {
+      kills: result.games.reduce((sum, game) => sum + game.red_kills, 0),
+      gold: result.games.reduce((sum, game) => sum + game.red_gold, 0),
+      towers: result.games.reduce((sum, game) => sum + (game.winner === 'red' ? 8 : 3), 0),
+      dragons: result.games.reduce((sum, game) => sum + (game.winner === 'red' ? 3 : 1), 0),
+      barons: result.games.filter((game) => game.winner === 'red' && game.duration_minutes >= 27).length,
+      heralds: result.games.filter((game) => game.winner === 'red').length,
+    },
+  };
+  const activePlayers = players.filter(
+    (player) => (player.team_id === blue.id || player.team_id === red.id) && player.status === 'active',
+  );
+  const killsByPlayer = new Map<string, number>();
+  const deathsByPlayer = new Map<string, number>();
+  const goldByPlayer = new Map<string, number>();
+  for (const team of [blue, red]) {
+    const opponent = team.id === blue.id ? red : blue;
+    const roster = activePlayers.filter((player) => player.team_id === team.id);
+    const teamKills = teamTotals[team.id].kills;
+    const opponentKills = teamTotals[opponent.id].kills;
+    distributeTeamTotal(teamKills, roster, `${seed}:kills`, { TOP: 0.13, JUNGLE: 0.18, MID: 0.24, ADC: 0.34, SUPPORT: 0.11 })
+      .forEach((value, playerId) => killsByPlayer.set(playerId, value));
+    distributeTeamTotal(opponentKills, roster, `${seed}:deaths`, { TOP: 0.22, JUNGLE: 0.2, MID: 0.18, ADC: 0.2, SUPPORT: 0.2 })
+      .forEach((value, playerId) => deathsByPlayer.set(playerId, value));
+    distributeTeamTotal(teamTotals[team.id].gold, roster, `${seed}:gold`, { TOP: 0.2, JUNGLE: 0.17, MID: 0.22, ADC: 0.27, SUPPORT: 0.14 })
+      .forEach((value, playerId) => goldByPlayer.set(playerId, value));
+  }
   return {
     id: uid('simulation'),
     match_id: match.id,
@@ -246,15 +389,34 @@ export function buildSimulation(
     completed_at: null,
     event_timeline: JSON.stringify(timeline),
     final_result: JSON.stringify({ winner_team_id: result.winner === 'blue' ? blue.id : red.id, blue_score: result.blue_score, red_score: result.red_score }),
-    player_stats: JSON.stringify(players
-      .filter((player) => (player.team_id === blue.id || player.team_id === red.id) && player.status === 'active')
-      .map((player, index) => {
+    player_stats: JSON.stringify(activePlayers.map((player, index) => {
         const rng = new Rng(`${seed}:player:${player.id}`);
-        return { player_id: player.id, team_id: player.team_id, kills: rng.int(0, 8), deaths: rng.int(0, 6), assists: rng.int(2, 16), games: result.games.length, order: index };
+        const team = player.team_id === blue.id ? blue : red;
+        const opponent = player.team_id === blue.id ? red : blue;
+        const farmByRole: Partial<Record<Role, number>> = { TOP: 7.1, JUNGLE: 5.6, MID: 7.8, ADC: 8.4, SUPPORT: 1.4 };
+        const roleFarm = farmByRole[player.role] ?? 4.5;
+        const teamWon = team.id === (result.winner === 'blue' ? blue.id : red.id);
+        const kills = killsByPlayer.get(player.id) ?? 0;
+        const deaths = deathsByPlayer.get(player.id) ?? 0;
+        const assists = rng.int(3, teamWon ? 18 : 13);
+        const cs = Math.round(totalDuration * roleFarm * rng.range(0.88, 1.12));
+        const gold = goldByPlayer.get(player.id) ?? 0;
+        const impact = Math.round((kills * 3 + assists - deaths * 2 + player.rating_overall * 0.35 + (teamWon ? 8 : 0)) * 10) / 10;
+        return {
+          player_id: player.id,
+          team_id: player.team_id,
+          kills,
+          deaths,
+          assists,
+          cs,
+          gold,
+          level: Math.min(18, 11 + Math.floor(totalDuration / Math.max(1, result.games.length * 5)) + rng.int(0, 2)),
+          impact,
+          games: result.games.length,
+          order: index,
+          opponent_team_id: opponent.id,
+        };
       })),
-    team_stats: JSON.stringify({
-      [blue.id]: { kills: result.games.reduce((sum, game) => sum + game.blue_kills, 0), gold: result.games.reduce((sum, game) => sum + game.blue_gold, 0) },
-      [red.id]: { kills: result.games.reduce((sum, game) => sum + game.red_kills, 0), gold: result.games.reduce((sum, game) => sum + game.red_gold, 0) },
-    }),
+    team_stats: JSON.stringify(teamTotals),
   };
 }

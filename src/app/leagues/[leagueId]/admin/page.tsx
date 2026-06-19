@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Settings, Users2, CalendarRange, Database, Shield, AlertOctagon, ScrollText,
   Download, Upload, Plus, Pencil, Trash2, Copy, RotateCcw, FileJson, FileSpreadsheet, Image as ImageIcon,
+  Eye,
 } from 'lucide-react';
 import { useDb, useLeague, useLeagueRole, canAdminister } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
@@ -162,6 +163,9 @@ function ScheduleSection({ leagueId }: { leagueId: string }) {
   const regenerate = useStore((s) => s.regenerateSchedule);
   const reset = useStore((s) => s.resetLeagueResults);
   const [format, setFormat] = useState<LeagueFormat>(league.format);
+  const watchSimulation = db.match_simulations
+    .filter((simulation) => simulation.league_id === leagueId)
+    .sort((a, b) => (a.status === 'running' ? -1 : b.status === 'running' ? 1 : +new Date(b.started_at) - +new Date(a.started_at)))[0];
 
   return (
     <div className="space-y-4">
@@ -183,6 +187,7 @@ function ScheduleSection({ leagueId }: { leagueId: string }) {
               <RotateCcw size={15} /> Reset results
             </ConfirmButton>
             <Link href={`/leagues/${leagueId}/schedule`}><Button variant="ghost">Open schedule →</Button></Link>
+            {watchSimulation && <Link href={`/leagues/${leagueId}/matches/${watchSimulation.match_id}/viewer`}><Button variant="outline"><Eye size={15} /> {watchSimulation.status === 'running' ? 'Watch live match' : 'Latest replay'}</Button></Link>}
           </div>
         </CardBody>
       </Card>
