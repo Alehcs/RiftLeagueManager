@@ -10,7 +10,7 @@ import { Card, CardBody, Button } from '@/components/ui/primitives';
 import { Field, Input, Select, Textarea } from '@/components/ui/form';
 import { LEAGUE_FORMAT_OPTIONS, FORMAT_META, TIER_META } from '@/lib/constants';
 import type { LeagueFormat, LeagueTier } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, teamShortName } from '@/lib/utils';
 import { TierBadge } from '@/components/common/badges';
 
 type Mode = 'manual' | 'clone' | 'json';
@@ -42,8 +42,9 @@ export default function NewLeaguePage() {
     if (!form.name.trim()) return;
     const leagueId = createLeague(form);
     const names = teamLines.split('\n').map((l) => l.trim()).filter(Boolean);
+    const usedShorts = new Set<string>();
     names.forEach((name) => {
-      const short = name.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase() || name.slice(0, 3).toUpperCase();
+      const short = teamShortName(name, usedShorts);
       createTeam(leagueId, { name, short_name: short, region: form.region, tier: form.tier });
     });
     if (genSchedule && names.length >= 2) regenerate(leagueId, form.format);

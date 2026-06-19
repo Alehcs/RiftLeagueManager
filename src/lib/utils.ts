@@ -62,6 +62,41 @@ export function initials(name: string, max = 2): string {
     .toUpperCase();
 }
 
+// Leading words dropped when a more distinctive word follows, so "Team Alpha"
+// abbreviates from "Alpha" instead of collapsing every "Team …" to "TEAM".
+const GENERIC_TEAM_WORDS = new Set(['team', 'club', 'the', 'esports', 'gaming', 'fc', 'gg']);
+
+// Build a short, readable team tag from a name: a single word becomes its first
+// letter plus the next consonants ("Alpha" -> "ALP", "Bravo" -> "BRV"); multiple
+// words become their initials ("Cloud Nine" -> "CN"). Pass `used` to keep tags
+// unique within a league (collisions get a numeric suffix).
+export function teamShortName(name: string, used?: Set<string>): string {
+  const words = name.replace(/[^a-zA-Z0-9 ]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return uniqueShort('TM', used);
+  const significant = words.length > 1 && GENERIC_TEAM_WORDS.has(words[0].toLowerCase())
+    ? words.slice(1)
+    : words;
+  let tag: string;
+  if (significant.length === 1) {
+    const word = significant[0];
+    const consonants = word.slice(1).replace(/[aeiou]/gi, '');
+    tag = (word[0] + consonants).slice(0, 3);
+    if (tag.length < 3) tag = word.slice(0, 3); // vowel-heavy word fallback
+  } else {
+    tag = significant.map((w) => w[0]).join('').slice(0, 4);
+  }
+  return uniqueShort((tag || words[0].slice(0, 3)).toUpperCase(), used);
+}
+
+function uniqueShort(tag: string, used?: Set<string>): string {
+  let candidate = tag;
+  if (used) {
+    for (let n = 2; used.has(candidate); n++) candidate = `${tag.slice(0, 3)}${n}`;
+    used.add(candidate);
+  }
+  return candidate;
+}
+
 // Deterministic color from a string — used for fallback logos/avatars.
 const PALETTE = [
   '#3b82f6', '#ef4444', '#22c55e', '#eab308', '#8b5cf6',
