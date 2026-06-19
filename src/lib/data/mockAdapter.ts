@@ -292,6 +292,14 @@ function normalizeMockDatabase(input: Database): Database {
     run_active: team.run_active ?? true,
     morale: team.morale ?? 50,
     synergy: team.synergy ?? 50,
+    performance_form: team.performance_form ?? 50,
+    fatigue: team.fatigue ?? 0,
+  }));
+  db.players = db.players.map((player) => ({
+    ...player,
+    performance_form: player.performance_form ?? 50,
+    morale: player.morale ?? 50,
+    fatigue: player.fatigue ?? 0,
   }));
   db.league_admins = db.league_admins.map((admin) => ({
     ...admin,

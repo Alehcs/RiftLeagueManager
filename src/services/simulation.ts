@@ -19,6 +19,9 @@ export interface GameResult {
   blue_gold: number;
   red_gold: number;
   notes: string;
+  was_comeback?: boolean;
+  pace?: 'stomp' | 'controlled' | 'close';
+  initial_blue_win_probability?: number;
 }
 
 export interface MatchSimResult {
@@ -60,6 +63,7 @@ function simulateGame(
   // Margin: how lopsided. Reflect strength gap + randomness.
   const edge = Math.abs(pBlue - 0.5) * 2; // 0..1
   const stomp = rng.float() < edge * 0.5; // strong favorite sometimes stomps
+  const wasComeback = !stomp && rng.bool(blueWins === (pBlue >= 0.5) ? 0.18 : 0.42);
 
   const duration = Math.round(
     stomp ? rng.range(22, 28) : rng.range(28, 41) + (1 - edge) * 4,
@@ -81,7 +85,14 @@ function simulateGame(
     red_kills: blueWins ? loserKills : winnerKills,
     blue_gold: blueWins ? wGold : lGold,
     red_gold: blueWins ? lGold : wGold,
-    notes: stomp ? `${winner === 'blue' ? blueName : redName} dominated early` : '',
+    notes: stomp
+      ? `${winner === 'blue' ? blueName : redName} dominated early`
+      : wasComeback
+        ? `${winner === 'blue' ? blueName : redName} recovered from an early deficit`
+        : '',
+    was_comeback: wasComeback,
+    pace: stomp ? 'stomp' : duration >= 36 ? 'close' : 'controlled',
+    initial_blue_win_probability: Math.round(pBlue * 1000) / 1000,
   };
 }
 

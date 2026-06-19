@@ -40,6 +40,7 @@ import { generatePlayerRatings, playerSalary, playerValue } from '@/services/rat
 import { buildLeagueExport, reidLeagueExport, isLeagueExport } from '@/services/leagueIO';
 import { normalizeRole, num, toObjects } from '@/services/csv';
 import {
+  applyMatchConsequences,
   botManagerName,
   buildSimulation,
   generateFreeAgents,
@@ -48,6 +49,7 @@ import {
   nextRunPhase,
   offerScore,
   playerCategory,
+  revertMatchConsequences,
   runPhase,
 } from '@/services/run';
 
@@ -370,7 +372,7 @@ export const useStore = create<StoreState>((set, get) => {
       seed,
     });
     db.match_simulations = db.match_simulations.filter((simulation) => simulation.match_id !== m.id);
-    const simulation = buildSimulation(m.league_id, m, res, blueTeam, redTeam, get().currentGuestId, seed, db.players);
+    const simulation = buildSimulation(m.league_id, m, res, blueTeam, redTeam, get().currentGuestId, seed, db.players, db.coaches);
     simulation.status = deferCompletion ? 'running' : 'completed';
     simulation.completed_at = deferCompletion ? null : nowISO();
     db.match_simulations.push(simulation);
@@ -399,19 +401,11 @@ export const useStore = create<StoreState>((set, get) => {
         });
       }
     }
-    if (!deferCompletion && m.stage === 'friendly') {
+    if (!deferCompletion) {
       const league = db.leagues.find((item) => item.id === m.league_id);
-      if (league?.friendlies_affect_development) {
-        const winner = db.teams.find((team) => team.id === m.winner_team_id);
-        const loser = db.teams.find((team) => team.id === (m.winner_team_id === m.blue_team_id ? m.red_team_id : m.blue_team_id));
-        const role = roleOf(m.league_id);
-        const editableTeam = role === 'owner' || role === 'admin' ? null : managedTeamOf(m.league_id);
-        if (winner && (!editableTeam || winner.id === editableTeam)) {
-          winner.morale = Math.min(100, (winner.morale ?? 50) + 3);
-          winner.synergy = Math.min(100, (winner.synergy ?? 50) + 2);
-        }
-        if (loser && (!editableTeam || loser.id === editableTeam)) loser.synergy = Math.min(100, (loser.synergy ?? 50) + 1);
-      }
+      const role = roleOf(m.league_id);
+      const editableTeam = m.stage === 'friendly' && role !== 'owner' && role !== 'admin' ? managedTeamOf(m.league_id) : null;
+      applyMatchConsequences(m, simulation, db.teams, db.players, league?.friendlies_affect_development ?? true, editableTeam);
     }
     if (!deferCompletion) advanceBracket(m);
   };
@@ -429,6 +423,8 @@ export const useStore = create<StoreState>((set, get) => {
     match.updated_at = nowISO();
     simulation.status = 'completed';
     simulation.completed_at = nowISO();
+    const league = db.leagues.find((item) => item.id === match.league_id);
+    applyMatchConsequences(match, simulation, db.teams, db.players, league?.friendlies_affect_development ?? true);
     advanceBracket(match);
     recomputeStandings(match.league_id);
   };
@@ -768,6 +764,10 @@ export const useStore = create<StoreState>((set, get) => {
           const leagueMatches = db.matches.filter((m) => m.league_id === id);
           const ids = new Set(leagueMatches.map((m) => m.id));
           db.games = db.games.filter((g) => !ids.has(g.match_id));
+          db.match_simulations
+            .filter((simulation) => simulation.league_id === id)
+            .sort((a, b) => +(new Date(b.completed_at ?? b.started_at)) - +(new Date(a.completed_at ?? a.started_at)))
+            .forEach((simulation) => revertMatchConsequences(simulation, db.teams, db.players));
           db.match_simulations = db.match_simulations.filter((simulation) => simulation.league_id !== id);
           for (const m of leagueMatches) {
             // bracket matches: clear advanced participants too
@@ -905,6 +905,8 @@ export const useStore = create<StoreState>((set, get) => {
           team.budget = league.starting_budget ?? 5_000_000;
           team.morale = 50;
           team.synergy = 50;
+          team.performance_form = 50;
+          team.fatigue = 0;
           team.updated_at = nowISO();
           const squad = generateRunSquad(league, team, runSeed);
           db.players.push(...squad.players);
@@ -953,6 +955,8 @@ export const useStore = create<StoreState>((set, get) => {
         run_active: input.run_active ?? true,
         morale: input.morale ?? 50,
         synergy: input.synergy ?? 50,
+        performance_form: input.performance_form ?? 50,
+        fatigue: input.fatigue ?? 0,
         created_at: ts,
         updated_at: ts,
       };
@@ -1049,6 +1053,9 @@ export const useStore = create<StoreState>((set, get) => {
         category: input.category ?? playerCategory(overall),
         potential: input.potential ?? Math.min(99, overall + 5),
         hidden_until_reveal: input.hidden_until_reveal ?? false,
+        performance_form: input.performance_form ?? 50,
+        morale: input.morale ?? 50,
+        fatigue: input.fatigue ?? 0,
         status: input.status ?? (input.team_id ? 'active' : 'free_agent'),
         generated: false,
         created_at: ts,
@@ -1236,6 +1243,8 @@ export const useStore = create<StoreState>((set, get) => {
         const db = get().db;
         const m = db.matches.find((x) => x.id === matchId);
         if (!m) return;
+        const simulation = db.match_simulations.find((item) => item.match_id === matchId);
+        if (simulation) revertMatchConsequences(simulation, db.teams, db.players);
         db.games = db.games.filter((g) => g.match_id !== matchId);
         db.match_simulations = db.match_simulations.filter((simulation) => simulation.match_id !== matchId);
         m.status = 'scheduled';

@@ -131,8 +131,8 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
   const allPerformers = [...bluePlayers, ...redPlayers]
     .map((player) => ({ player, stat: statFor(player, playerStats, simulation?.simulation_seed ?? match.id, duration) }))
     .sort((a, b) => performanceScore(b.stat, b.player) - performanceScore(a.stat, a.player));
-  const mvp = allPerformers[0];
-  const worst = allPerformers[allPerformers.length - 1];
+  const mvp = allPerformers.find((entry) => entry.player.id === finalResult.mvp_player_id) ?? allPerformers[0];
+  const worst = allPerformers.find((entry) => entry.player.id === finalResult.struggling_player_id) ?? allPerformers[allPerformers.length - 1];
   const winner = finalResult.winner_team_id === blue.id ? blue : finalResult.winner_team_id === red.id ? red : undefined;
 
   const replay = () => {
@@ -170,6 +170,7 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
         clock={formatSimulationClock(events, playhead)}
         status={status}
         format={match.format}
+        blueWinProbability={currentEvent?.blue_win_probability ?? blueStats.initial_win_probability ?? 0.5}
       />
 
       <div className="grid gap-2 xl:grid-cols-[minmax(0,1.5fr)_minmax(440px,.9fr)]">
@@ -215,6 +216,7 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
             progress={progress}
             duration={duration}
             seed={simulation?.simulation_seed ?? match.id}
+            state={currentEvent?.state?.blue ?? blueStats.state}
           />
           <TeamRoster
             team={red}
@@ -225,6 +227,7 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
             progress={progress}
             duration={duration}
             seed={simulation?.simulation_seed ?? match.id}
+            state={currentEvent?.state?.red ?? redStats.state}
           />
 
           <div className="grid gap-2 sm:grid-cols-[220px_1fr] xl:grid-cols-[210px_1fr] 2xl:grid-cols-[240px_1fr]">
@@ -245,6 +248,7 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
               mvp={status === 'completed' || showSummary ? mvp : undefined}
               worst={status === 'completed' || showSummary ? worst : undefined}
               events={events}
+              recap={finalResult.recap}
               canStart={canAdminister(role) && match.status === 'scheduled'}
               onStart={() => simulateMatch(match.id)}
               onPause={() => setPlaying(false)}
@@ -257,7 +261,7 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
   );
 }
 
-function Scoreboard({ blue, red, blueStats, redStats, blueScore, redScore, progress, clock, status, format }: {
+function Scoreboard({ blue, red, blueStats, redStats, blueScore, redScore, progress, clock, status, format, blueWinProbability }: {
   blue: Team;
   red: Team;
   blueStats: SimulationTeamStat;
@@ -268,6 +272,7 @@ function Scoreboard({ blue, red, blueStats, redStats, blueScore, redScore, progr
   clock: string;
   status: 'pending' | 'running' | 'completed';
   format: string;
+  blueWinProbability: number;
 }) {
   return (
     <header className="overflow-hidden rounded-xl border border-slate-700/70 bg-[#12131d] shadow-xl">
@@ -281,6 +286,11 @@ function Scoreboard({ blue, red, blueStats, redStats, blueScore, redScore, progr
             <Badge color="#8b5cf6">{format}</Badge>
           </div>
           <div className="mt-1 font-mono text-lg font-black tabular-nums text-white sm:text-xl">{clock}</div>
+          <div className="mt-0.5 text-[9px] font-semibold tabular-nums text-slate-500">
+            Win pressure <span className="text-rift-blue">{Math.round(blueWinProbability * 100)}%</span>
+            <span className="px-1 text-slate-700">·</span>
+            <span className="text-rift-red">{Math.round((1 - blueWinProbability) * 100)}%</span>
+          </div>
         </div>
         <TeamIdentity team={red} side="red" score={redScore} />
       </div>
@@ -318,7 +328,7 @@ function TeamStatStrip({ stats, progress, side }: { stats: SimulationTeamStat; p
   return <div className={cn('flex items-center gap-3 overflow-hidden px-3 py-2 text-[11px] sm:justify-center', side === 'red' && 'justify-end')}>{items.map((item) => <span key={item.label} title={item.label} className="flex items-center gap-1 font-semibold tabular-nums text-slate-300"><span className={side === 'blue' ? 'text-rift-blue' : 'text-rift-red'}>{item.icon}</span>{item.value}</span>)}</div>;
 }
 
-function TeamRoster({ team, side, players, stats, finalStats, progress, duration, seed }: {
+function TeamRoster({ team, side, players, stats, finalStats, progress, duration, seed, state }: {
   team: Team;
   side: 'blue' | 'red';
   players: Player[];
@@ -327,15 +337,16 @@ function TeamRoster({ team, side, players, stats, finalStats, progress, duration
   progress: number;
   duration: number;
   seed: string;
+  state?: SimulationTeamStat['state'];
 }) {
-  const pressure = Math.round(45 + (finalStats.gold / Math.max(1, finalStats.gold + 50000)) * 40 * progress);
+  const pressure = state?.map_pressure ?? Math.round(45 + (finalStats.gold / Math.max(1, finalStats.gold + 50000)) * 40 * progress);
   return (
     <section className="overflow-hidden rounded-xl border border-slate-700/70 bg-[#141620] shadow-lg">
       <div className="flex items-center gap-3 border-b border-white/5 bg-white/[.025] px-3 py-2">
         <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-black text-slate-100">{team.name}</div>
-          <div className="text-[9px] uppercase tracking-[.15em] text-slate-600">Morale {team.morale ?? 50} · Synergy {team.synergy ?? 50}</div>
+          <div className="text-[9px] uppercase tracking-[.15em] text-slate-600">Momentum {state?.momentum ?? 50} · Objectives {state?.objective_control ?? 50}</div>
         </div>
         <div className="text-right">
           <div className={cn('text-xs font-black tabular-nums', side === 'blue' ? 'text-rift-blue' : 'text-rift-red')}>{scaledStat(finalStats.kills, progress)} K</div>
@@ -407,9 +418,10 @@ function PlaybackControls({ playing, speed, progress, disabled, completed, onTog
   );
 }
 
-function QuickPanel({ mode, setMode, status, matchInfo, currentEvent, winner, mvp, worst, events, canStart, onStart, onPause, onResult }: {
+function QuickPanel({ mode, setMode, status, matchInfo, currentEvent, winner, mvp, worst, events, recap, canStart, onStart, onPause, onResult }: {
   mode: PanelMode; setMode: (mode: PanelMode) => void; status: string; matchInfo: string; currentEvent?: TimelineEvent; winner?: Team;
   mvp?: { player: Player; stat: SimulationPlayerStat }; worst?: { player: Player; stat: SimulationPlayerStat }; events: TimelineEvent[];
+  recap?: string;
   canStart: boolean; onStart: () => void; onPause: () => void; onResult: () => void;
 }) {
   return (
@@ -420,7 +432,7 @@ function QuickPanel({ mode, setMode, status, matchInfo, currentEvent, winner, mv
       <div className="min-h-0 flex-1 p-2 text-xs">
         {mode === 'info' && <div className="space-y-2"><div className="text-[9px] font-bold uppercase tracking-[.16em] text-slate-600">Match info</div><div className="capitalize text-slate-200">{matchInfo}</div><div className="flex items-center gap-2 text-slate-500"><Shield size={12} /> Status: <span className="font-semibold uppercase text-slate-300">{status}</span></div>{currentEvent && <div className="rounded-md bg-bg-soft p-2 text-[10px] leading-4 text-slate-400">{currentEvent.text}</div>}</div>}
         {mode === 'events' && <div className="space-y-1"><div className="text-[9px] font-bold uppercase tracking-[.16em] text-slate-600">Key events</div>{events.filter((event) => event.type !== 'movement').slice(-4).map((event, index) => <div key={`${event.minute}-${index}`} className="line-clamp-2 text-[10px] leading-4 text-slate-400"><span className="mr-1 font-mono text-rift-cyan">{event.in_game_minute ?? event.minute}&apos;</span>{event.text}</div>)}</div>}
-        {mode === 'summary' && <div className="space-y-2"><div className="text-[9px] font-bold uppercase tracking-[.16em] text-rift-gold">Post-match report</div>{winner ? <div className="font-bold text-slate-100">Winner · {winner.name}</div> : <div className="text-slate-500">Awaiting the persisted result.</div>}{mvp && <PerformerLine label="MVP" entry={mvp} positive />}{worst && <PerformerLine label="Low impact" entry={worst} />}{events.length > 0 && <p className="line-clamp-3 text-[10px] leading-4 text-slate-500">{events.slice(-3).map((event) => event.text).join(' ')}</p>}</div>}
+        {mode === 'summary' && <div className="space-y-2"><div className="text-[9px] font-bold uppercase tracking-[.16em] text-rift-gold">Post-match report</div>{winner ? <div className="font-bold text-slate-100">Winner · {winner.name}</div> : <div className="text-slate-500">Awaiting the persisted result.</div>}{mvp && <PerformerLine label="MVP" entry={mvp} positive />}{worst && <PerformerLine label="Low impact" entry={worst} />}{(recap || events.length > 0) && <p className="line-clamp-4 text-[10px] leading-4 text-slate-500">{recap ?? events.slice(-3).map((event) => event.text).join(' ')}</p>}</div>}
       </div>
       <div className="space-y-1.5">
         {canStart && <Button className="w-full" size="sm" variant="primary" onClick={onStart}><Play size={13} /> Start simulation</Button>}
@@ -455,7 +467,7 @@ function statFor(player: Player, stats: SimulationPlayerStat[], seed: string, du
 }
 
 function performanceScore(stat: SimulationPlayerStat, player: Player): number {
-  return stat.impact ?? stat.kills * 3 + stat.assists - stat.deaths * 2 + player.rating_overall * 0.35;
+  return stat.mvp_score ?? stat.impact ?? stat.kills * 3 + stat.assists - stat.deaths * 2 + player.rating_overall * 0.35;
 }
 
 function completeTeamStats(stored: SimulationTeamStat | undefined, games: ReturnType<typeof gamesOf>, side: 'blue' | 'red'): SimulationTeamStat {
@@ -467,6 +479,10 @@ function completeTeamStats(stored: SimulationTeamStat | undefined, games: Return
     dragons: stored?.dragons ?? games.length + wins * 2,
     barons: stored?.barons ?? games.filter((game) => game.duration_minutes >= 27 && game.winner_team_id === (side === 'blue' ? game.blue_team_id : game.red_team_id)).length,
     heralds: stored?.heralds ?? wins,
+    elders: stored?.elders ?? 0,
+    initial_win_probability: stored?.initial_win_probability,
+    final_win_probability: stored?.final_win_probability,
+    state: stored?.state,
   };
 }
 

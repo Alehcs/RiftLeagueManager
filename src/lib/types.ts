@@ -167,6 +167,8 @@ export interface Team {
   run_active?: boolean;
   morale?: number;
   synergy?: number;
+  performance_form?: number;
+  fatigue?: number;
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +199,9 @@ export interface Player {
   category?: PlayerCategory;
   potential?: number;
   hidden_until_reveal?: boolean;
+  performance_form?: number;
+  morale?: number;
+  fatigue?: number;
   status: PlayerStatus;
   generated?: boolean;
   created_at: string;

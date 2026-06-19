@@ -75,7 +75,24 @@ export function computeTeamStrength(team: Team, players: Player[], coaches: Coac
 
   const budgetBonus = clamp(Math.log10(Math.max(1, team.budget) / 4_000_000) * 1.3, -1.5, 2);
   const form = formBonus(team.form);
-  const developmentBonus = clamp((((team.morale ?? 50) - 50) + ((team.synergy ?? 50) - 50)) / 30, -2, 2);
+  const rosterForm = starters.length
+    ? starters.reduce((sum, player) => sum + (player.performance_form ?? 50), 0) / starters.length
+    : 50;
+  const rosterFatigue = starters.length
+    ? starters.reduce((sum, player) => sum + (player.fatigue ?? 0), 0) / starters.length
+    : 0;
+  const developmentBonus = clamp(
+    (
+      ((team.morale ?? 50) - 50)
+      + ((team.synergy ?? 50) - 50)
+      + ((team.performance_form ?? 50) - 50)
+      + (rosterForm - 50) * 0.6
+      - (team.fatigue ?? 0) * 0.35
+      - rosterFatigue * 0.25
+    ) / 38,
+    -3,
+    3,
+  );
 
   // Composite: lineup dominates; macro/consistency nudge; coach/budget/form small.
   const score = clamp(

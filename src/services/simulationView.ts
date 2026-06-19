@@ -5,6 +5,14 @@ export interface SimulationFinalResult {
   winner_team_id: string;
   blue_score: number;
   red_score: number;
+  mvp_player_id?: string;
+  standout_player_id?: string;
+  struggling_player_id?: string;
+  match_style?: 'stomp' | 'close_game' | 'comeback' | 'controlled_win';
+  key_objective?: string;
+  turning_points?: string[];
+  recap?: string;
+  effects_applied?: boolean;
 }
 
 export interface SimulationPlayerStat {
@@ -17,6 +25,12 @@ export interface SimulationPlayerStat {
   gold?: number;
   level?: number;
   impact?: number;
+  kill_participation?: number;
+  damage_impact?: number;
+  objective_participation?: number;
+  vision_utility?: number;
+  key_events?: number;
+  mvp_score?: number;
   games: number;
   order: number;
 }
@@ -28,6 +42,19 @@ export interface SimulationTeamStat {
   dragons?: number;
   barons?: number;
   heralds?: number;
+  elders?: number;
+  initial_win_probability?: number;
+  final_win_probability?: number;
+  state?: {
+    gold?: number;
+    gold_lead?: number;
+    momentum?: number;
+    objective_control?: number;
+    map_pressure?: number;
+    tower_pressure?: number;
+    teamfight_strength?: number;
+    comeback_pressure?: number;
+  };
 }
 
 export type SimulationTeamStats = Record<string, SimulationTeamStat>;
@@ -116,4 +143,3 @@ export function deterministicUnit(seed: string): number {
   }
   return (hash >>> 0) / 4294967295;
 }
-
