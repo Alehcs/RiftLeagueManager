@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Settings, Users2, CalendarRange, Database, Shield, AlertOctagon, ScrollText,
   Download, Upload, Plus, Pencil, Trash2, Copy, RotateCcw, FileJson, FileSpreadsheet, Image as ImageIcon,
@@ -424,6 +425,7 @@ function LogsSection({ leagueId }: { leagueId: string }) {
 
 // --- Danger -----------------------------------------------------------------
 function DangerSection({ leagueId }: { leagueId: string }) {
+  const router = useRouter();
   const db = useDb();
   const league = db.leagues.find((l) => l.id === leagueId)!;
   const clone = useStore((s) => s.cloneLeague);
@@ -443,7 +445,7 @@ function DangerSection({ leagueId }: { leagueId: string }) {
         </Row>
         <Divider />
         <Row title="Delete league" desc="Permanently remove this league and everything in it.">
-          <ConfirmButton variant="danger" size="sm" confirmLabel="Delete forever?" onConfirm={() => { del(leagueId); window.location.href = '/dashboard'; }}>
+          <ConfirmButton variant="danger" size="sm" confirmLabel="Delete forever?" onConfirm={() => { del(leagueId); router.push('/dashboard'); }}>
             <Trash2 size={14} /> {`Delete "${league.name}"`}
           </ConfirmButton>
         </Row>
