@@ -4,7 +4,7 @@
 
 Primary reference: [Liquipedia Portal:Teams](https://liquipedia.net/leagueoflegends/Portal:Teams).
 Team identities are real; rosters list verified handles only where known (rest
-auto-filled); no logos bundled (initials fallback). 118 teams total.
+auto-filled); no logos bundled (initials fallback). 137 teams total.
 
 ## Current Active Teams (Tier 1, by region)
 
@@ -64,15 +64,26 @@ Royal Club, Snake Esports, Vici Gaming, Newbee, Suning
 ### Pacific
 Taipei Assassins, Flash Wolves, ahq e-Sports Club, Albus NoX Luna
 
+### Missing-teams pass — newly added (19, all `active: false`)
+- **EMEA**: Los Ratones (LR — NLC, founded 2024 by Caedrel, disbanded Feb 2026), Rogue, Giants Gaming, against All authority, Copenhagen Wolves
+- **Korea**: Samsung Galaxy White, Samsung Galaxy Blue, Azubu Frost, MVP Ozone, Afreeca Freecs, Incredible Miracle
+- **China**: FunPlus Phoenix (Worlds 2019 champions)
+- **North America**: Team Curse
+- **South America**: KaBuM! e-Sports, INTZ e-Sports
+- **Pacific / wildcard**: Saigon Jokers, Bangkok Titans, Dire Wolves, Chiefs Esports Club
+
 ## Nostalgia Templates
 The historic / legacy / disbanded teams above carry `active: false` and keep
 their original region for context but are **never placed in current regional
-competitions**. They power three nostalgia templates (generated rosters — no
+competitions**. They power six nostalgia templates (generated rosters — no
 real players invented):
 
 - **Historic Legends Cup** — SKT, Samsung Galaxy, Taipei Assassins, Flash Wolves, TSM, CLG, Origen, Gambit
 - **Disbanded Teams Cup** — Misfits, Splyce, H2k, Evil Geniuses, OpTic, Echo Fox, Immortals, ROX Tigers
 - **Global All-Time Invitational** — T1, SKT, Samsung Galaxy, Gen.G, Fnatic, G2, TSM, RNG
+- **EU Legends Cup** — Los Ratones, Rogue, Giants Gaming, against All authority, Copenhagen Wolves, Origen, Misfits, Gambit
+- **Worlds Throwback** — Samsung White, Samsung Blue, Azubu Frost, Afreeca Freecs, FunPlus Phoenix, KaBuM!, Taipei Assassins, SKT
+- **All-Time Wildcards** — Saigon Jokers, Bangkok Titans, Dire Wolves, Chiefs, INTZ, MVP Ozone, Incredible Miracle, Team Curse
 
 > The data model has no dedicated `category`/`era` field — historic status is
 > expressed via `active: false`. Era notes live here in the catalog.
@@ -87,8 +98,15 @@ data)** — obscure short_names/tiers need verification before adding:
 - **LDL** (China development league)
 - **LoL Japan League (LJL)**, **VCS** (Vietnam), **PCS** academies — note these
   feed into LCP/Pacific now.
+- **Active ERLs** (LFL, Prime League, SuperLiga, NLC, etc.) — only the notable
+  Los Ratones was added; the wider ERL field is still a TODO.
 
 Uncertain fields to confirm against the current split:
+- Los Ratones is modelled as `erl` / EMEA / `active: false` (disbanded 2026);
+  confirm tier/era if used in a historical season.
+- Some legacy names overlap lineages (Samsung White/Blue → Samsung Galaxy → Gen.G;
+  Azubu Frost → CJ Entus; Afreeca Freecs → Kwangdong) — kept as distinct era
+  entries on purpose.
 - short_names for newer/renamed orgs: **Shifters** (SHF?), **SOOPers** (SOP?),
   **FEARX** (FX?), **Deep Cross Gaming** (DCG?), **Ground Zero Gaming** (GZG?).
 - Region model: NA + SA are modelled separately but now sit under **LTA**

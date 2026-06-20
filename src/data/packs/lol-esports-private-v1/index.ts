@@ -182,6 +182,33 @@ const ORGS: Org[] = [
   { id: 'flashwolves', name: 'Flash Wolves', short: 'FW', region: 'pacific', country: 'TW', tier: 'tier1', active: false },
   { id: 'ahq', name: 'ahq e-Sports Club', short: 'AHQ', region: 'pacific', country: 'TW', tier: 'tier1', active: false },
   { id: 'albusnox', name: 'Albus NoX Luna', short: 'ANX', region: 'pacific', country: 'RU', tier: 'tier1', active: false },
+
+  // ----- Missing-teams pass: additional notable / legacy / regional orgs -----
+  // EMEA
+  { id: 'losratones', name: 'Los Ratones', short: 'LR', region: 'emea', country: 'GB', tier: 'erl', active: false, color: '#f4c430' }, // NLC; founded 2024 by Caedrel, disbanded Feb 2026
+  { id: 'rogue', name: 'Rogue', short: 'RGE', region: 'emea', country: 'FR', tier: 'tier1', active: false, color: '#0a7d2c' }, // legacy → KOI lineage
+  { id: 'giants', name: 'Giants Gaming', short: 'GIA', region: 'emea', country: 'ES', tier: 'tier1', active: false }, // Vodafone Giants; merged into GIANTX
+  { id: 'aaa', name: 'against All authority', short: 'AAA', region: 'emea', country: 'FR', tier: 'tier1', active: false }, // Season 1/2 era
+  { id: 'copenhagenwolves', name: 'Copenhagen Wolves', short: 'CW', region: 'emea', country: 'DK', tier: 'tier1', active: false },
+  // Korea
+  { id: 'samsungwhite', name: 'Samsung Galaxy White', short: 'SSW', region: 'korea', country: 'KR', tier: 'tier1', active: false }, // Worlds 2014 champions
+  { id: 'samsungblue', name: 'Samsung Galaxy Blue', short: 'SSB', region: 'korea', country: 'KR', tier: 'tier1', active: false },
+  { id: 'azubufrost', name: 'Azubu Frost', short: 'AZF', region: 'korea', country: 'KR', tier: 'tier1', active: false }, // → CJ Entus Frost
+  { id: 'mvpozone', name: 'MVP Ozone', short: 'OZ', region: 'korea', country: 'KR', tier: 'tier1', active: false },
+  { id: 'afreeca', name: 'Afreeca Freecs', short: 'AF', region: 'korea', country: 'KR', tier: 'tier1', active: false }, // → Kwangdong Freecs
+  { id: 'incrediblemiracle', name: 'Incredible Miracle', short: 'IM', region: 'korea', country: 'KR', tier: 'tier1', active: false },
+  // China
+  { id: 'fpx', name: 'FunPlus Phoenix', short: 'FPX', region: 'china', country: 'CN', tier: 'tier1', active: false, color: '#e4002b' }, // Worlds 2019 champions
+  // North America
+  { id: 'curse', name: 'Team Curse', short: 'CRS', region: 'na', country: 'US', tier: 'tier1', active: false },
+  // South America
+  { id: 'kabum', name: 'KaBuM! e-Sports', short: 'KBM', region: 'sa', country: 'BR', tier: 'regional', active: false }, // Worlds 2014 wildcard
+  { id: 'intz', name: 'INTZ e-Sports', short: 'ITZ', region: 'sa', country: 'BR', tier: 'regional', active: false },
+  // Pacific / wildcard
+  { id: 'saigonjokers', name: 'Saigon Jokers', short: 'SAJ', region: 'pacific', country: 'VN', tier: 'regional', active: false },
+  { id: 'bangkoktitans', name: 'Bangkok Titans', short: 'BKT', region: 'pacific', country: 'TH', tier: 'regional', active: false },
+  { id: 'direwolves', name: 'Dire Wolves', short: 'DW', region: 'pacific', country: 'AU', tier: 'regional', active: false },
+  { id: 'chiefs', name: 'Chiefs Esports Club', short: 'CHF', region: 'pacific', country: 'AU', tier: 'regional', active: false },
 ];
 
 // --- de-dupe guard: slug must be unique --------------------------------------
@@ -263,5 +290,9 @@ export const LOL_ESPORTS_PRIVATE_V1: DataPack = {
     { id: 'comp-historic-legends', name: 'Historic Legends Cup', tier: 'international', format: 'single_elim', season: 'All-Time', team_ids: tier2In(['skt', 'ssg', 'tpa', 'flashwolves', 'tsm', 'clg', 'origen', 'gambit']) },
     { id: 'comp-disbanded-cup', name: 'Disbanded Teams Cup', tier: 'international', format: 'double_round_robin_bo1', season: 'All-Time', team_ids: tier2In(['misfits', 'splyce', 'h2k', 'eg', 'optic', 'echofox', 'imt', 'roxtigers']) },
     { id: 'comp-alltime-invitational', name: 'Global All-Time Invitational', tier: 'international', format: 'groups_playoffs', season: 'All-Time', team_ids: tier2In(['t1', 'skt', 'ssg', 'geng', 'fnc', 'g2', 'tsm', 'rng']) },
+    // Templates surfacing the newly added legacy/regional orgs (existing comps unchanged)
+    { id: 'comp-eu-legends', name: 'EU Legends Cup', tier: 'international', format: 'single_elim', season: 'All-Time', team_ids: tier2In(['losratones', 'rogue', 'giants', 'aaa', 'copenhagenwolves', 'origen', 'misfits', 'gambit']) },
+    { id: 'comp-worlds-throwback', name: 'Worlds Throwback', tier: 'international', format: 'groups_playoffs', season: 'All-Time', team_ids: tier2In(['samsungwhite', 'samsungblue', 'azubufrost', 'afreeca', 'fpx', 'kabum', 'tpa', 'skt']) },
+    { id: 'comp-alltime-wildcards', name: 'All-Time Wildcards', tier: 'international', format: 'double_round_robin_bo1', season: 'All-Time', team_ids: tier2In(['saigonjokers', 'bangkoktitans', 'direwolves', 'chiefs', 'intz', 'mvpozone', 'incrediblemiracle', 'curse']) },
   ],
 };
