@@ -6,6 +6,7 @@ import { useDb, useLeague } from '@/lib/store/hooks';
 import { teamsOf } from '@/lib/store/selectors';
 import {
   circuitForLeague,
+  circuitRegions,
   COMPETITION_MODE_META,
   parseCircuitCalendar,
   parseCompetitions,
@@ -66,6 +67,10 @@ export default function CompetitionsPage({ params }: { params: { leagueId: strin
       </Card>
 
       {circuit.mode === 'full_circuit' && (
+        <RegionalLeagues teams={teams} matches={matches} results={qualificationResults} leagueId={league.id} />
+      )}
+
+      {circuit.mode === 'full_circuit' && (
         <div className="grid gap-4 lg:grid-cols-2">
           <QualificationCard target="msi" title="MSI qualification" results={qualificationResults} teams={teams} matches={matches} />
           <QualificationCard target="worlds" title="Worlds qualification" results={qualificationResults} teams={teams} matches={matches} />
@@ -100,6 +105,42 @@ export default function CompetitionsPage({ params }: { params: { leagueId: strin
         </>
       ) : <EmptyState title="No active competition" hint="Complete setup to activate this circuit." />}
     </div>
+  );
+}
+
+function RegionalLeagues({ teams, matches, results, leagueId }: { teams: ReturnType<typeof teamsOf>; matches: ReturnType<typeof useDb>['matches']; results: ReturnType<typeof parseQualificationResults>; leagueId: string }) {
+  const regions = circuitRegions(teams);
+  const regionalMatches = matches.filter((m) => m.competition_key === 'regional_league');
+  const qualifiedIds = (target: string) => new Set(results.filter((r) => r.target_competition_key === target && r.team_id).map((r) => r.team_id));
+  const msiIds = qualifiedIds('msi');
+  const worldsIds = qualifiedIds('worlds');
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Globe2 size={16} className="text-rift-cyan" /> Regional leagues</CardTitle>
+        <Badge color="#26d0ce">{regions.length} region{regions.length === 1 ? '' : 's'} in parallel</Badge>
+      </CardHeader>
+      <CardBody className="grid gap-4 lg:grid-cols-2">
+        {regions.map((region) => {
+          const regionTeams = teams.filter((t) => (t.region || 'Unknown') === region);
+          const rMatches = regionalMatches.filter((m) => regionTeams.some((t) => t.id === m.blue_team_id || t.id === m.red_team_id));
+          const played = rMatches.filter((m) => m.status === 'completed').length;
+          return (
+            <div key={region} className="rounded-lg border border-border bg-bg-soft/30 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-semibold text-slate-200">{region}</span>
+                <span className="text-[11px] text-slate-500">{regionTeams.length} teams · {played}/{rMatches.length} played</span>
+              </div>
+              {rMatches.length ? <StandingsTable teams={regionTeams} matches={rMatches} leagueId={leagueId} compact limit={6} /> : <p className="py-2 text-xs text-slate-500">Schedule pending.</p>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {regionTeams.filter((t) => msiIds.has(t.id)).map((t) => <Badge key={t.id} color="#22c55e">MSI · {t.short_name}</Badge>)}
+                {regionTeams.filter((t) => worldsIds.has(t.id) && !msiIds.has(t.id)).map((t) => <Badge key={t.id} color="#c8a85a">Worlds · {t.short_name}</Badge>)}
+              </div>
+            </div>
+          );
+        })}
+      </CardBody>
+    </Card>
   );
 }
 

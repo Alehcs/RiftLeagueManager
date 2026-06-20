@@ -267,6 +267,21 @@ export function circuitForLeague(db: Database, league: League): SeasonCircuit {
   return db.season_circuits.find((item) => item.league_id === league.id) ?? createSeasonCircuit(league);
 }
 
+// Distinct home regions present among a circuit's active teams.
+export function circuitRegions(teams: Team[]): string[] {
+  return [...new Set(teams.map((team) => team.region || 'Unknown'))].sort();
+}
+
+// Per-region MSI/Worlds qualification rules for a Full Circuit. region_key scopes
+// the standings the qualification engine reads, so each region produces its own
+// qualifiers from its own regional league.
+export function buildRegionQualificationRules(regions: string[]): QualificationRuleDefinition[] {
+  return regions.flatMap((region) => [
+    { id: `msi-${region}`, type: 'points' as const, source_competition_key: 'regional_league', target_competition_key: 'msi', slots: 1, region_key: region, label: `${region} #1 seed → MSI` },
+    { id: `worlds-${region}`, type: 'points' as const, source_competition_key: 'regional_league', target_competition_key: 'worlds', slots: 2, region_key: region, label: `${region} season seed → Worlds` },
+  ]);
+}
+
 function parseJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }

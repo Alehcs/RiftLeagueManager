@@ -30,6 +30,7 @@ import { applyStandings, standingsTable } from '@/services/standings';
 import {
   generateDoubleElim,
   generateNextSwissRound,
+  generateRoundRobin,
   generateSchedule,
   generateSingleElim,
   formatForLeague,
@@ -53,6 +54,7 @@ import {
   runPhase,
 } from '@/services/run';
 import {
+  buildRegionQualificationRules,
   createSeasonCircuit,
   parseQualificationResults,
   phaseCompetitionKey,
@@ -978,9 +980,52 @@ export const useStore = create<StoreState>((set, get) => {
           team.bot_manager_name = null;
         });
         db.players.push(...generateFreeAgents(league, runSeed));
-        const competitionKey = league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_league';
-        const stageKey = league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_regular_season';
-        db.matches.push(...tagCompetitionMatches(generateSchedule(league, activeTeams, { start: new Date() }), competitionKey, stageKey));
+        if (league.competition_mode === 'full_circuit') {
+          // Parallel regional leagues: group active teams by home region, fill
+          // each region with generated bot teams, and schedule a round-robin per
+          // region so every region simulates independently in the same season.
+          const MIN_REGION_TEAMS = 4;
+          const FILLER_SUFFIX = ['Vanguard', 'Dynamo', 'United', 'Phoenix', 'Collective', 'Sentinels', 'Rising', 'Legacy'];
+          const byRegion = new Map<string, Team[]>();
+          for (const team of activeTeams) {
+            const region = team.region || 'Unknown';
+            if (!byRegion.has(region)) byRegion.set(region, []);
+            byRegion.get(region)!.push(team);
+          }
+          const regionMatches: Match[] = [];
+          let fillerIndex = 0;
+          for (const [region, regionTeams] of byRegion) {
+            for (let i = regionTeams.length; i < MIN_REGION_TEAMS; i++) {
+              const fid = uid('t');
+              const short = `${(region.replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'BOT').toUpperCase()}${i + 1}`;
+              const filler: Team = {
+                id: fid, league_id: leagueId, name: `${region} ${FILLER_SUFFIX[fillerIndex % FILLER_SUFFIX.length]}`, short_name: short,
+                region, country: regionTeams[0]?.country ?? '', tier: regionTeams[0]?.tier ?? league.tier,
+                logo_url: null, banner_url: null, external_url: null, source_name: 'Generated', source_url: null, confidence: 0.2,
+                budget: league.starting_budget ?? 5_000_000, wins: 0, losses: 0, games_won: 0, games_lost: 0, points: 0, form: '',
+                generated: true, is_bot: true, bot_manager_name: null, run_active: true, morale: 50, synergy: 50, performance_form: 50, fatigue: 0,
+                created_at: nowISO(), updated_at: nowISO(),
+              };
+              filler.bot_manager_name = botManagerName(filler, fillerIndex);
+              fillerIndex++;
+              db.teams.push(filler);
+              const squad = generateRunSquad(league, filler, runSeed);
+              db.players.push(...squad.players);
+              db.coaches.push(squad.coach);
+              regionTeams.push(filler);
+            }
+            const ids = regionTeams.map((team) => team.id);
+            if (ids.length >= 2) regionMatches.push(...generateRoundRobin(leagueId, ids, 'BO1', false, new Date(), null));
+          }
+          db.matches.push(...tagCompetitionMatches(regionMatches, 'regional_league', 'regional_regular_season'));
+          let circuit = db.season_circuits.find((c) => c.league_id === leagueId);
+          if (!circuit) { circuit = createSeasonCircuit(league); db.season_circuits.push(circuit); }
+          circuit.qualification_rules_json = JSON.stringify(buildRegionQualificationRules([...byRegion.keys()]));
+        } else {
+          const competitionKey = league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_league';
+          const stageKey = league.competition_mode === 'quick_tournament' ? 'quick_tournament' : 'regional_regular_season';
+          db.matches.push(...tagCompetitionMatches(generateSchedule(league, activeTeams, { start: new Date() }), competitionKey, stageKey));
+        }
         league.run_phase = 'roster_reveal';
         league.run_seed = runSeed;
         league.run_started_at = nowISO();
