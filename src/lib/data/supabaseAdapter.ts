@@ -342,6 +342,11 @@ export class SupabaseAdapter implements DataAdapter {
       payload.qualification_rules_json = parseJson(payload.qualification_rules_json);
       payload.qualification_results_json = parseJson(payload.qualification_results_json);
     }
+    if (table === 'matches') {
+      for (const key of ['blue_team_id', 'red_team_id', 'winner_team_id', 'feeds_winner_to', 'feeds_loser_to']) {
+        if (payload[key] === '') payload[key] = null;
+      }
+    }
     if (table === 'guest_sessions') payload.auth_user_id = this.authUserId;
     if (table === 'leagues' && typeof payload.admin_code_hash === 'string' && payload.admin_code_hash.startsWith('plain:')) {
       payload.admin_code_hash = await sha256(payload.admin_code_hash.slice(6));
@@ -507,6 +512,13 @@ function fromSupabaseRow(table: TableName, row: Record<string, unknown>): Row {
       competitions_json: JSON.stringify(row.competitions_json ?? []),
       qualification_rules_json: JSON.stringify(row.qualification_rules_json ?? []),
       qualification_results_json: JSON.stringify(row.qualification_results_json ?? []),
+    } as Row;
+  }
+  if (table === 'matches') {
+    return {
+      ...row,
+      blue_team_id: row.blue_team_id ?? '',
+      red_team_id: row.red_team_id ?? '',
     } as Row;
   }
   if (table !== 'audit_logs') return row as unknown as Row;

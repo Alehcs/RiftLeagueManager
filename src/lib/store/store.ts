@@ -488,6 +488,10 @@ export const useStore = create<StoreState>((set, get) => {
       unsubscribeAdapter?.();
       unsubscribeAdapter = adapter.subscribe(
         ({ db, currentGuestId }, event) => {
+          // A realtime reload can finish between queued snapshot writes and
+          // must not replace newer local state that has not reached the server.
+          // The final write emits another realtime event and converges normally.
+          if (pendingWrites > 0) return;
           set({ db, currentGuestId, error: null, rev: get().rev + 1 });
           if (event) addToast(event);
         },
