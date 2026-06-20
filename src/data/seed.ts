@@ -327,7 +327,7 @@ function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; is
       region: raw.region,
       country: rt.country,
       tier: raw.tier,
-      logo_url: null,
+      logo_url: rt.logo ?? null,
       banner_url: null,
       external_url: raw.source_url ?? null,
       source_name: raw.source_name ?? null,

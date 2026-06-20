@@ -2,19 +2,20 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Wand2, Copy, FileJson, Sparkles, Plus, Timer, Map, Globe2 } from 'lucide-react';
+import { Wand2, Copy, FileJson, Sparkles, Plus, Timer, Map, Globe2, Boxes } from 'lucide-react';
 import { useDb } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { PageContainer } from '@/components/common/layout';
-import { Card, CardBody, Button } from '@/components/ui/primitives';
+import { Card, CardBody, Button, Badge } from '@/components/ui/primitives';
 import { Field, Input, Select, Textarea } from '@/components/ui/form';
 import { LEAGUE_FORMAT_OPTIONS, FORMAT_META, TIER_META } from '@/lib/constants';
 import type { CompetitionMode, LeagueFormat, LeagueTier } from '@/lib/types';
 import { cn, teamShortName } from '@/lib/utils';
 import { TierBadge } from '@/components/common/badges';
 import { COMPETITION_MODE_META } from '@/services/competition';
+import { listDataPacks, getDataPack, competitionToRawLeague } from '@/lib/dataPacks';
 
-type Mode = 'manual' | 'clone' | 'json';
+type Mode = 'manual' | 'pack' | 'clone' | 'json';
 
 export default function NewLeaguePage() {
   const router = useRouter();
@@ -24,6 +25,7 @@ export default function NewLeaguePage() {
   const regenerate = useStore((s) => s.regenerateSchedule);
   const cloneLeague = useStore((s) => s.cloneLeague);
   const importBundle = useStore((s) => s.importLeagueBundle);
+  const importRaw = useStore((s) => s.importRawLeague);
 
   const [mode, setMode] = useState<Mode>('manual');
 
@@ -31,6 +33,13 @@ export default function NewLeaguePage() {
   const [form, setForm] = useState({ name: '', region: 'Custom', tier: 'custom' as LeagueTier, season: '2026', format: 'double_round_robin_bo1' as LeagueFormat, competition_mode: 'regional_season' as CompetitionMode, adminCode: '' });
   const [teamLines, setTeamLines] = useState('');
   const [genSchedule, setGenSchedule] = useState(true);
+
+  // data pack state
+  const packs = listDataPacks();
+  const [packId, setPackId] = useState(packs[0]?.id ?? '');
+  const [competitionId, setCompetitionId] = useState('');
+  const selectedPack = getDataPack(packId);
+  const selectedCompetition = selectedPack?.competitions.find((c) => c.id === competitionId) ?? selectedPack?.competitions[0];
 
   // clone state
   const [cloneId, setCloneId] = useState('');
@@ -50,6 +59,13 @@ export default function NewLeaguePage() {
     });
     if (genSchedule && names.length >= 2) regenerate(leagueId, form.format);
     router.push(`/leagues/${leagueId}/lobby`);
+  };
+
+  const doPack = () => {
+    if (!selectedPack || !selectedCompetition) return;
+    const raw = competitionToRawLeague(selectedPack, selectedCompetition);
+    const id = importRaw(raw);
+    if (id) router.push(`/leagues/${id}/lobby`);
   };
 
   const doClone = () => {
@@ -76,11 +92,12 @@ export default function NewLeaguePage() {
         <Wand2 className="text-rift-cyan" />
         <h1 className="text-2xl font-bold text-slate-50">Create a league</h1>
       </div>
-      <p className="mb-6 text-sm text-slate-500">Build a custom league, clone an existing one, or import from a JSON bundle.</p>
+      <p className="mb-6 text-sm text-slate-500">Build a custom league, seed teams from a data pack, clone an existing one, or import from a JSON bundle.</p>
 
-      <div className="mb-5 grid grid-cols-3 gap-2">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {([
           { id: 'manual', label: 'From scratch', icon: Sparkles },
+          { id: 'pack', label: 'Data pack', icon: Boxes },
           { id: 'clone', label: 'Clone existing', icon: Copy },
           { id: 'json', label: 'Import JSON', icon: FileJson },
         ] as const).map((m) => (
@@ -145,6 +162,53 @@ export default function NewLeaguePage() {
             <div className="flex justify-end">
               <Button variant="primary" disabled={!form.name.trim()} onClick={createManual}><Plus size={15} /> Create league</Button>
             </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {mode === 'pack' && (
+        <Card>
+          <CardBody className="space-y-4">
+            <p className="text-sm text-slate-500">Seed a league from a structured esports data pack — teams, rosters, regions and tiers. The bundled sample is fictional; private real-data packs can be added later.</p>
+            {packs.length === 0 ? (
+              <div className="rounded-lg border border-border bg-bg-soft/40 p-4 text-sm text-slate-500">No data packs are installed.</div>
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Data pack">
+                    <Select value={packId} onChange={(e) => { setPackId(e.target.value); setCompetitionId(''); }}>
+                      {packs.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.season}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Competition">
+                    <Select value={selectedCompetition?.id ?? ''} onChange={(e) => setCompetitionId(e.target.value)}>
+                      {selectedPack?.competitions.map((c) => <option key={c.id} value={c.id}>{c.name} · {TIER_META[c.tier].label}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+                {selectedPack && (
+                  <p className="text-xs text-slate-600">{selectedPack.description} · {selectedPack.regions.length} regions · {selectedPack.teams.length} teams · {selectedPack.players.length} players · v{selectedPack.version}</p>
+                )}
+                {selectedPack && selectedCompetition && (
+                  <div className="space-y-2 rounded-lg border border-border bg-bg-soft/40 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <TierBadge tier={selectedCompetition.tier} />
+                      <Badge color="#64748b">{FORMAT_META[selectedCompetition.format].label}</Badge>
+                      <span className="text-xs text-slate-500">{selectedCompetition.team_ids.length} teams</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedCompetition.team_ids.map((tid) => {
+                        const team = selectedPack.teams.find((t) => t.id === tid);
+                        return team ? <span key={tid} className="rounded-md border border-border bg-bg-card px-2 py-1 text-xs text-slate-300">{team.name} <span className="text-slate-600">{team.short_name}</span></span> : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <Button variant="primary" disabled={!selectedCompetition} onClick={doPack}><Boxes size={15} /> Create from pack</Button>
+                </div>
+              </>
+            )}
           </CardBody>
         </Card>
       )}

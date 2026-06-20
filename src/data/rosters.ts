@@ -32,6 +32,7 @@ export interface RawTeam {
   strength: number; // 1..5
   coach?: RawCoach;
   roster?: RawPlayer[];
+  logo?: string | null; // optional pack asset path or external URL
 }
 export interface RawLeague {
   name: string;
