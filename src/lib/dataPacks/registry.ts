@@ -1,11 +1,12 @@
 import { SAMPLE_PACK } from '@/data/packs/sample';
+import { LOL_ESPORTS_PRIVATE_V1 } from '@/data/packs/lol-esports-private-v1';
 import type { DataPack, DataPackSummary } from './types';
 import { summarizeDataPack, validateDataPack } from './validate';
 
-// Bundled packs available to every install. The sample pack ships publicly;
-// private real-esports packs can be added here (or loaded from JSON) later
-// without touching the importer or UI.
-const BUNDLED_PACKS: DataPack[] = [SAMPLE_PACK];
+// Bundled packs available to every install. The sample pack ships publicly; the
+// private LoL pack is for personal/prototype use. More packs (or JSON-loaded
+// packs) can be added here without touching the importer or UI.
+const BUNDLED_PACKS: DataPack[] = [SAMPLE_PACK, LOL_ESPORTS_PRIVATE_V1];
 
 export function listDataPacks(): DataPackSummary[] {
   return BUNDLED_PACKS.map(summarizeDataPack);
