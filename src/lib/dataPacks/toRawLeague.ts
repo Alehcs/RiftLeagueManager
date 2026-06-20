@@ -58,6 +58,7 @@ export function competitionToRawLeague(pack: DataPack, competition: DataPackComp
     const strengths = rawRoster
       .map(({ nick }) => pack.players.find((p) => p.handle === nick)?.strength)
       .filter((s): s is number => typeof s === 'number');
+    const homeRegion = pack.regions.find((r) => r.id === team.region_id);
     const raw: RawTeam = {
       name: team.name,
       short: team.short_name,
@@ -65,6 +66,8 @@ export function competitionToRawLeague(pack: DataPack, competition: DataPackComp
       strength: teamStrength(team, strengths),
       roster: rawRoster.length ? rawRoster : undefined,
       logo: team.logo ?? org?.logo ?? null,
+      region: homeRegion?.name ?? region?.name,
+      tier: team.tier,
     };
     return [raw];
   });

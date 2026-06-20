@@ -33,6 +33,8 @@ export interface RawTeam {
   coach?: RawCoach;
   roster?: RawPlayer[];
   logo?: string | null; // optional pack asset path or external URL
+  region?: string; // optional real home region; falls back to the league region
+  tier?: LeagueTier; // optional real tier; falls back to the league tier
 }
 export interface RawLeague {
   name: string;

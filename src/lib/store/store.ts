@@ -120,6 +120,7 @@ interface StoreState {
   updateTeam: (id: string, patch: Partial<Team>) => void;
   deleteTeam: (id: string) => void;
   setBotTeam: (teamId: string, enabled: boolean) => void;
+  randomFillBots: (leagueId: string, count?: number) => void;
 
   // players
   createPlayer: (leagueId: string, input: Partial<Player> & { nickname: string; role: Role }) => string;
@@ -1074,6 +1075,44 @@ export const useStore = create<StoreState>((set, get) => {
           }
         }
       }, { toast: { kind: 'info', message: enabled ? `${team.short_name} assigned to a bot` : `${team.short_name} returned to the selection pool` } });
+    },
+
+    randomFillBots(leagueId, count) {
+      if (!requireAdmin(leagueId, 'fill bot teams')) return;
+      const league = get().db.leagues.find((l) => l.id === leagueId);
+      if (!league || runPhase(league) !== 'team_selection') {
+        reportError(new Error('Bot teams can only be changed during team selection.'));
+        return;
+      }
+      const managedIds = new Set(
+        get().db.league_members.filter((m) => m.league_id === leagueId && m.role === 'manager' && m.team_id).map((m) => m.team_id),
+      );
+      const fillable = get().db.teams.filter(
+        (t) => t.league_id === leagueId && t.run_active !== false && !t.is_bot && !managedIds.has(t.id),
+      );
+      const targets = typeof count === 'number' && count >= 0 ? fillable.slice(0, count) : fillable;
+      if (!targets.length) {
+        get().pushToast({ kind: 'info', message: 'No open teams to fill.' });
+        return;
+      }
+      const targetIds = new Set(targets.map((t) => t.id));
+      // Single commit so the burst persists cleanly under Supabase sync.
+      commit(() => {
+        const db = get().db;
+        let botIndex = db.teams.filter((t) => t.league_id === leagueId && t.is_bot).length;
+        db.teams.filter((t) => targetIds.has(t.id)).forEach((t) => {
+          t.is_bot = true;
+          t.bot_manager_name = botManagerName(t, botIndex++);
+          t.updated_at = nowISO();
+        });
+        const l = db.leagues.find((x) => x.id === leagueId);
+        if (l) {
+          const botCount = db.teams.filter((t) => t.league_id === leagueId && t.is_bot).length;
+          l.bot_teams_enabled = botCount > 0;
+          l.bot_team_count = botCount;
+          l.updated_at = nowISO();
+        }
+      }, { toast: { kind: 'success', message: `Filled ${targets.length} team${targets.length > 1 ? 's' : ''} with bots` } });
     },
 
     // -- players --------------------------------------------------------------

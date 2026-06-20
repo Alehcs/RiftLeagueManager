@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bot, Check, ChevronRight, Eye, Gamepad2, Globe2, Settings2, Shield, Swords, Trophy, UserMinus, Users2, Wallet } from 'lucide-react';
-import { useCurrentGuestId, useDb, useLeague, useLeagueRole, useManagedTeamId, canAdminister } from '@/lib/store/hooks';
+import { ChevronRight, Eye, Gamepad2, Globe2, Settings2, Swords, Trophy, Users2, Wallet } from 'lucide-react';
+import { useDb, useLeague, useLeagueRole, useManagedTeamId, canAdminister } from '@/lib/store/hooks';
 import { membersOf, teamManager, teamsOf } from '@/lib/store/selectors';
 import { useStore } from '@/lib/store/store';
 import { FORMAT_META, LEAGUE_FORMAT_OPTIONS } from '@/lib/constants';
 import type { LeagueFormat } from '@/lib/types';
 import { isPreseason, nextRunPhase, RUN_PHASE_LABELS, runPhase } from '@/services/run';
-import { TeamLogo } from '@/components/ui/image';
 import { Button, Card, CardBody, CardHeader, CardTitle, EmptyState, Stat } from '@/components/ui/primitives';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/form';
 import { RunPhaseBadge } from '@/components/common/badges';
+import { TeamSelectionPanel } from '@/components/league/TeamSelectionPanel';
 import { formatMoney } from '@/lib/utils';
 import { COMPETITION_MODE_META, competitionMode } from '@/services/competition';
 
@@ -20,14 +20,9 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
   const db = useDb();
   const league = useLeague(params.leagueId);
   const role = useLeagueRole(league?.id);
-  const currentGuestId = useCurrentGuestId();
   const managedTeamId = useManagedTeamId(league?.id);
   const updateSetup = useStore((state) => state.updateRunSetup);
   const advance = useStore((state) => state.advanceRunPhase);
-  const claimTeam = useStore((state) => state.claimTeam);
-  const assignManager = useStore((state) => state.assignManager);
-  const removeManager = useStore((state) => state.removeManager);
-  const setBotTeam = useStore((state) => state.setBotTeam);
   const playFriendly = useStore((state) => state.playFriendly);
   const [friendlyOpponent, setFriendlyOpponent] = useState('');
 
@@ -148,39 +143,7 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
       )}
 
       {phase === 'team_selection' && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between"><h3 className="font-semibold text-slate-200">Team selection</h3><span className="text-xs text-slate-500">Each real team can be selected once.</span></div>
-          {teams.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {teams.map((team) => {
-                const manager = teamManager(db, league.id, team.id);
-                const managerGuest = manager ? db.guest_sessions.find((guest) => guest.id === manager.guest_id) : undefined;
-                const unavailable = !!manager || !!team.is_bot;
-                return (
-                  <Card key={team.id} className={unavailable ? 'border-border-soft' : ''}>
-                    <CardBody className="space-y-3">
-                      <div className="flex items-center gap-3"><TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} /><div className="min-w-0 flex-1"><div className="truncate font-semibold text-slate-100">{team.name}</div><div className="text-xs text-slate-500">{team.region} · {team.short_name}</div></div>{unavailable && <Check size={16} className="text-rift-cyan" />}</div>
-                      <div className="min-h-8 text-xs text-slate-400">
-                        {team.is_bot ? <span className="flex items-center gap-1.5"><Bot size={13} /> {team.bot_manager_name ?? 'Bot manager'}</span> : manager ? <span className="flex items-center gap-1.5"><Shield size={13} /> {managerGuest?.display_name ?? 'Manager'}</span> : 'Available'}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {!unavailable && !managedTeamId && <Button size="sm" variant="primary" onClick={() => void claimTeam(league.id, team.id)}>Pick team</Button>}
-                        {manager && (manager.guest_id === currentGuestId || isAdmin) && <Button size="sm" variant="outline" onClick={() => removeManager(league.id, manager.guest_id)}><UserMinus size={13} /> {manager.guest_id === currentGuestId ? 'Release' : 'Remove manager'}</Button>}
-                        {isAdmin && !manager && <Button size="sm" variant={team.is_bot ? 'outline' : 'secondary'} onClick={() => setBotTeam(team.id, !team.is_bot)}><Bot size={13} /> {team.is_bot ? 'Remove bot' : 'Use bot'}</Button>}
-                      </div>
-                      {isAdmin && !unavailable && members.some((member) => member.role === 'viewer') && (
-                        <Select defaultValue="" onChange={(event) => event.target.value && assignManager(league.id, event.target.value, team.id)}>
-                          <option value="">Assign joined guest…</option>
-                          {members.filter((member) => member.role === 'viewer').map((member) => <option key={member.id} value={member.guest_id}>{db.guest_sessions.find((guest) => guest.id === member.guest_id)?.display_name ?? 'Guest'}</option>)}
-                        </Select>
-                      )}
-                    </CardBody>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : <EmptyState title="No teams available" hint="Add or import real teams from the Admin page before opening selection." />}
-        </section>
+        teams.length ? <TeamSelectionPanel league={league} /> : <EmptyState title="No teams available" hint="Add or import real teams from the Admin page before opening selection." />
       )}
 
       {isPreseason(phase) && (
