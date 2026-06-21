@@ -347,6 +347,12 @@ export class SupabaseAdapter implements DataAdapter {
         if (payload[key] === '') payload[key] = null;
       }
     }
+    if (table === 'market_offers') {
+      // `reason`/`from_team_id` are client-only display fields on bot offers and
+      // have no Postgres columns; drop them so inserts/updates don't 400.
+      delete payload.reason;
+      delete payload.from_team_id;
+    }
     if (table === 'guest_sessions') payload.auth_user_id = this.authUserId;
     if (table === 'leagues' && typeof payload.admin_code_hash === 'string' && payload.admin_code_hash.startsWith('plain:')) {
       payload.admin_code_hash = await sha256(payload.admin_code_hash.slice(6));

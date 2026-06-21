@@ -146,6 +146,10 @@ interface RunBotMarketParams {
   transferHistory: TransferRecord[]; // db.transfer_history (records pushed)
   tick: number; // monotonically increasing per market action; seeds the RNG
   reason: string; // phase label, used in feed copy
+  // A real guest id to own the bot's offer rows. `market_offers.offered_by_guest_id`
+  // is a NOT NULL FK to guest_sessions, so bot offers are attributed to the guest
+  // who triggered the tick (the buying team lives in `team_id`).
+  offeredByGuestId: string;
 }
 
 const regionLabel = (team: Team | undefined) => team?.region || 'an international';
@@ -157,7 +161,7 @@ const regionLabel = (team: Team | undefined) => team?.region || 'an internationa
  * is capped so rosters never churn unrealistically.
  */
 export function runBotMarket(params: RunBotMarketParams): BotMarketActivity[] {
-  const { league, teams, players, offers, transferHistory, tick } = params;
+  const { league, teams, players, offers, transferHistory, tick, offeredByGuestId } = params;
   const seed = `${league.run_seed ?? league.id}:market:${tick}`;
   const rng = new Rng(seed);
   const activity: BotMarketActivity[] = [];
@@ -218,7 +222,7 @@ export function runBotMarket(params: RunBotMarketParams): BotMarketActivity[] {
         .sort((a, b) => roleFit(b, targetRole) - roleFit(a, targetRole))[0];
       if (contested) {
         const fee = Math.round(marketValue(contested) * botRng.range(1.02, 1.18));
-        offers.push(buildOffer(league, contested, bot, fee, 'starter', `${bot.short_name} is competing for a free agent ${targetRole.toLowerCase()}.`, null));
+        offers.push(buildOffer(league, contested, bot, fee, 'starter', `${bot.short_name} is competing for a free agent ${targetRole.toLowerCase()}.`, null, offeredByGuestId));
         record('offer', `${bot.short_name} made a competing offer for free agent ${contested.nickname}.`, bot.id, contested.id);
         actions++;
         continue;
@@ -238,7 +242,7 @@ export function runBotMarket(params: RunBotMarketParams): BotMarketActivity[] {
         const sellTeam = teams.find((t) => t.id === target.team_id);
         offers.push(buildOffer(league, target, bot, fee, 'starter',
           `${bot.short_name} wants a ${needs.missingRoles.includes(targetRole) ? 'starting' : 'stronger'} ${targetRole.toLowerCase()}${needs.lowDepth ? ' and more depth' : ''}.`,
-          target.team_id ?? null));
+          target.team_id ?? null, offeredByGuestId));
         record('offer', `${bot.short_name} made an offer to ${sellTeam?.short_name ?? 'a rival'} for ${target.nickname}.`, bot.id, target.id);
         actions++;
         continue;
@@ -316,6 +320,7 @@ function buildOffer(
   rolePromise: MarketOffer['role_promise'],
   reason: string,
   fromTeamId: string | null,
+  offeredByGuestId: string,
 ): MarketOffer {
   const submittedAt = nowISO();
   const expiresAt = new Date(Date.now() + Math.max(1, league.free_agent_offer_window_hours ?? 24) * 3600000).toISOString();
@@ -324,7 +329,7 @@ function buildOffer(
     league_id: league.id,
     player_id: player.id,
     team_id: buyer.id,
-    offered_by_guest_id: `bot:${buyer.id}`,
+    offered_by_guest_id: offeredByGuestId,
     transfer_fee: fee,
     salary: player.salary,
     role_promise: rolePromise,

@@ -383,6 +383,7 @@ export const useStore = create<StoreState>((set, get) => {
     if (!teams.some((team) => team.is_bot)) return 0;
     const players = db.players.filter((player) => player.league_id === leagueId);
     const tick = db.audit_logs.filter((entry) => entry.league_id === leagueId && entry.action_type === 'bot_market').length;
+    const actorGuestId = get().currentGuestId;
     const activity = runBotMarket({
       league,
       teams,
@@ -391,12 +392,15 @@ export const useStore = create<StoreState>((set, get) => {
       transferHistory: db.transfer_history,
       tick,
       reason,
+      offeredByGuestId: actorGuestId,
     });
     for (const entry of activity) {
       db.audit_logs.push({
         id: uid('al'),
         league_id: leagueId,
-        actor_guest_id: entry.team_id,
+        // actor_guest_id is a FK to guest_sessions; attribute to the acting
+        // guest. The bot team that made the move is carried in after_json.
+        actor_guest_id: actorGuestId,
         action_type: 'bot_market',
         entity_type: 'market',
         entity_id: entry.player_id ?? entry.team_id,
