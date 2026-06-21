@@ -79,7 +79,11 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
   });
 
   const modeMeta = COMPETITION_MODE_META[competitionMode(league)];
-  const nextLabel = phase === 'team_selection' ? 'Start run' : `Advance to ${RUN_PHASE_LABELS[nextRunPhase(league)]}`;
+  const nextLabel = phase === 'team_selection'
+    ? 'Start run'
+    : phase === 'next_season_setup'
+      ? 'Start next season'
+      : `Advance to ${RUN_PHASE_LABELS[nextRunPhase(league)]}`;
 
   return (
     <div className="space-y-6">

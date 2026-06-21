@@ -38,6 +38,15 @@ import {
 } from '@/services/schedule';
 import { canAfford } from '@/services/transfers';
 import { runBotMarket } from '@/services/market';
+import {
+  applySeasonRewards,
+  applyPlayerDevelopment,
+  applySeasonRecovery,
+  applyRetirements,
+  seasonRecap,
+  nextSeasonKey,
+  resetTeamForNewSeason,
+} from '@/services/season';
 import { roleInLeague, managedTeamId as managedTeamIdSel } from './selectors';
 import { generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
 import { buildLeagueExport, reidLeagueExport, isLeagueExport } from '@/services/leagueIO';
@@ -118,6 +127,7 @@ interface StoreState {
   updateRunSetup: (leagueId: string, patch: Partial<Pick<League, 'starting_budget' | 'preparation_weeks' | 'bot_teams_enabled' | 'bot_team_count' | 'format' | 'friendlies_affect_development' | 'market_rules' | 'free_agent_offer_window_hours'>>) => void;
   advanceRunPhase: (leagueId: string) => void;
   startRun: (leagueId: string) => void;
+  startNextSeason: (leagueId: string) => void;
 
   // teams
   createTeam: (leagueId: string, input: Partial<Team> & { name: string; short_name: string }) => string;
@@ -410,6 +420,45 @@ export const useStore = create<StoreState>((set, get) => {
       });
     }
     return activity.length;
+  };
+
+  // Apply season-end effects once per season: prize money, bounded player
+  // development, fatigue/morale recovery, conservative retirements, and a
+  // persisted recap snapshot (audit_logs 'season_end'). Idempotent via a
+  // per-season marker so re-advancing/reloading never re-applies it.
+  const runSeasonEndInDb = (leagueId: string): { rewards: number; retired: number } => {
+    const db = get().db;
+    const league = db.leagues.find((item) => item.id === leagueId);
+    if (!league) return { rewards: 0, retired: 0 };
+    // Idempotency keyed by season_key inside after_json (not entity_id, which is
+    // a uuid column in Supabase and must stay a real id).
+    const alreadyApplied = db.audit_logs.some((entry) => {
+      if (entry.league_id !== leagueId || entry.action_type !== 'season_end') return false;
+      try { return (JSON.parse(entry.after_json ?? '{}') as { season_key?: string }).season_key === league.season; } catch { return false; }
+    });
+    if (alreadyApplied) return { rewards: 0, retired: 0 };
+    const teams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
+    const matches = db.matches.filter((match) => match.league_id === leagueId);
+    const players = db.players.filter((player) => player.league_id === leagueId);
+    const seed = `${league.run_seed ?? league.id}:${league.season}`;
+    const rewards = applySeasonRewards(teams, matches);
+    applyPlayerDevelopment(players, seed);
+    applySeasonRecovery(teams, players);
+    const retired = applyRetirements(players, seed);
+    const recap = seasonRecap(league, teams, matches, players, db.match_simulations, db.transfer_history);
+    db.audit_logs.push({
+      id: uid('al'),
+      league_id: leagueId,
+      actor_guest_id: get().currentGuestId,
+      action_type: 'season_end',
+      entity_type: 'season',
+      // entity_id is a uuid column; use the league id (season lives in after_json).
+      entity_id: leagueId,
+      before_json: null,
+      after_json: JSON.stringify({ season_key: league.season, recap, rewards, retired }),
+      created_at: nowISO(),
+    });
+    return { rewards: rewards.length, retired: retired.length };
   };
 
   // Apply a single match result + advance bracket links + create games.
@@ -925,6 +974,10 @@ export const useStore = create<StoreState>((set, get) => {
         get().startRun(leagueId);
         return;
       }
+      if (runPhase(league) === 'next_season_setup') {
+        get().startNextSeason(leagueId);
+        return;
+      }
       const next = nextRunPhase(league);
       commit(() => {
         const db = get().db;
@@ -968,6 +1021,9 @@ export const useStore = create<StoreState>((set, get) => {
           db.players.filter((player) => player.league_id === leagueId).forEach((player) => { player.hidden_until_reveal = false; });
         }
         if (next === 'completed') target.run_completed_at = nowISO();
+        // Entering the offseason finalizes the competitive year: prize money,
+        // player development, recovery, retirements, and a recap snapshot.
+        if (next === 'offseason') runSeasonEndInDb(leagueId);
         // Bot teams trade during natural market windows only — never on render.
         const MARKET_WINDOWS: LeagueRunPhase[] = ['preseason_week_1', 'preseason_week_2', 'preseason_week_3', 'midseason_break', 'offseason'];
         if (MARKET_WINDOWS.includes(next)) runBotMarketInDb(leagueId, next.replaceAll('_', ' '));
@@ -1085,6 +1141,68 @@ export const useStore = create<StoreState>((set, get) => {
         league.updated_at = nowISO();
         syncCircuitInDb(leagueId);
       }, { toast: { kind: 'success', message: 'Run started. Rosters are ready to reveal.' } });
+    },
+
+    // Loop the Full Circuit into a fresh year. Keeps teams, rosters, managers,
+    // budgets and the persisted season recap; resets standings + the schedule
+    // and bumps the season key. Old matches/replays are cleared for a clean
+    // slate (TODO: archive prior-season matches/sims for in-app replay history).
+    startNextSeason(leagueId) {
+      if (!requireAdmin(leagueId, 'start the next season')) return;
+      const league0 = get().db.leagues.find((item) => item.id === leagueId);
+      if (!league0 || runPhase(league0) !== 'next_season_setup') {
+        reportError(new Error('Finish the offseason and reach next season setup first.'));
+        return;
+      }
+      const newSeason = nextSeasonKey(league0.season);
+      commit(() => {
+        const db = get().db;
+        const league = db.leagues.find((item) => item.id === leagueId);
+        if (!league) return;
+        // Finalize the closing season's recap if it has not been captured yet.
+        runSeasonEndInDb(leagueId);
+        const matchIds = new Set(db.matches.filter((match) => match.league_id === leagueId).map((match) => match.id));
+        db.games = db.games.filter((game) => !matchIds.has(game.match_id));
+        db.match_simulations = db.match_simulations.filter((simulation) => simulation.league_id !== leagueId);
+        db.matches = db.matches.filter((match) => match.league_id !== leagueId);
+        db.market_offers
+          .filter((offer) => offer.league_id === leagueId && offer.status === 'active')
+          .forEach((offer) => { offer.status = 'expired'; offer.resolved_at = nowISO(); });
+        const activeTeams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
+        activeTeams.forEach(resetTeamForNewSeason);
+        if (league.competition_mode === 'full_circuit') {
+          const byRegion = new Map<string, Team[]>();
+          for (const team of activeTeams) {
+            const region = team.region || 'Unknown';
+            if (!byRegion.has(region)) byRegion.set(region, []);
+            byRegion.get(region)!.push(team);
+          }
+          const regionMatches: Match[] = [];
+          for (const regionTeams of byRegion.values()) {
+            const ids = regionTeams.map((team) => team.id);
+            if (ids.length >= 2) regionMatches.push(...generateRoundRobin(leagueId, ids, 'BO1', false, new Date(), null));
+          }
+          db.matches.push(...tagCompetitionMatches(regionMatches, 'regional_league', 'regional_regular_season'));
+          const circuit = db.season_circuits.find((item) => item.league_id === leagueId);
+          if (circuit) circuit.qualification_rules_json = JSON.stringify(buildRegionQualificationRules([...byRegion.keys()]));
+        } else {
+          db.matches.push(...tagCompetitionMatches(generateSchedule(league, activeTeams, { start: new Date() }), 'regional_league', 'regional_regular_season'));
+        }
+        db.players.push(...generateFreeAgents(league, `${league.run_seed ?? league.id}:${newSeason}`));
+        league.season = newSeason;
+        league.run_phase = 'preseason_week_1';
+        league.current_run_week = 1;
+        league.run_completed_at = null;
+        league.updated_at = nowISO();
+        const circuit = db.season_circuits.find((item) => item.league_id === leagueId);
+        if (circuit) {
+          circuit.season_key = newSeason;
+          circuit.qualification_results_json = '[]';
+          circuit.status = 'active';
+        }
+        recomputeStandings(leagueId);
+        syncCircuitInDb(leagueId);
+      }, { toast: { kind: 'success', message: `New season started: ${newSeason}` } });
     },
 
     // -- teams ----------------------------------------------------------------

@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { CalendarDays, Check, Circle, Clock3, Globe2, Target, Trophy, Users2 } from 'lucide-react';
+import { CalendarDays, Check, Circle, Clock3, Globe2, Target, Trophy, Users2, Award, History, Star, ArrowRightLeft } from 'lucide-react';
 import { useDb, useLeague } from '@/lib/store/hooks';
-import { teamsOf } from '@/lib/store/selectors';
+import { teamsOf, playersOf, seasonEndLogsOf, teamById, playerById } from '@/lib/store/selectors';
+import { seasonRecap } from '@/services/season';
 import {
   circuitForLeague,
   circuitRegions,
@@ -18,7 +19,7 @@ import { MatchCard } from '@/components/league/MatchCard';
 import { StandingsTable } from '@/components/league/StandingsTable';
 import { TeamLogo } from '@/components/ui/image';
 import { Badge, Button, Card, CardBody, CardHeader, CardTitle, EmptyState, Stat } from '@/components/ui/primitives';
-import { cn } from '@/lib/utils';
+import { cn, formatMoney } from '@/lib/utils';
 
 export default function CompetitionsPage({ params }: { params: { leagueId: string } }) {
   const db = useDb();
@@ -75,6 +76,10 @@ export default function CompetitionsPage({ params }: { params: { leagueId: strin
           <QualificationCard target="msi" title="MSI qualification" results={qualificationResults} teams={teams} matches={matches} />
           <QualificationCard target="worlds" title="Worlds qualification" results={qualificationResults} teams={teams} matches={matches} />
         </div>
+      )}
+
+      {circuit.mode !== 'quick_tournament' && (
+        <SeasonRecapCard db={db} league={league} teams={teams} matches={matches} />
       )}
 
       {active ? (
@@ -165,4 +170,81 @@ function QualificationCard({ target, title, results, teams, matches }: { target:
 
 function MatchList({ title, matches, leagueId, empty }: { title: string; matches: ReturnType<typeof useDb>['matches']; leagueId: string; empty: string }) {
   return <Card><CardHeader><CardTitle>{title}</CardTitle></CardHeader><CardBody className="space-y-2">{matches.length ? matches.map((match) => <MatchCard key={match.id} match={match} leagueId={leagueId} />) : <p className="text-sm text-slate-500">{empty}</p>}</CardBody></Card>;
+}
+
+function SeasonRecapCard({ db, league, teams, matches }: { db: ReturnType<typeof useDb>; league: NonNullable<ReturnType<typeof useLeague>>; teams: ReturnType<typeof teamsOf>; matches: ReturnType<typeof useDb>['matches'] }) {
+  const players = playersOf(db, league.id);
+  const recap = seasonRecap(league, teams, matches, players, db.match_simulations, db.transfer_history);
+  const pastSeasons = seasonEndLogsOf(db, league.id);
+  const completedCount = matches.filter((m) => m.status === 'completed').length;
+  if (completedCount === 0 && pastSeasons.length === 0) return null;
+
+  const teamName = (id: string | null) => (id ? teamById(db, id)?.short_name ?? '—' : '—');
+  const playerName = (id: string | null) => (id ? playerById(db, id)?.nickname ?? '—' : '—');
+  const mvp = recap.mvp_player_id ? playerById(db, recap.mvp_player_id) : undefined;
+  const transfer = recap.biggest_transfer;
+  const champ = (label: string, id: string | null, color: string) => (
+    <div className="rounded-lg border border-border bg-bg-soft/30 p-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold" style={{ color }}>
+        {id ? <><Trophy size={13} /> {teamName(id)}</> : <span className="text-slate-600">TBD</span>}
+      </div>
+    </div>
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Award size={16} className="text-rift-gold" /> Season recap · {league.season}</CardTitle>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {champ('Worlds champion', recap.worlds_champion_team_id, '#c8a85a')}
+          {champ('MSI champion', recap.msi_champion_team_id, '#26d0ce')}
+          {champ('Playoff champion', recap.playoff_champion_team_id, '#a78bfa')}
+          {champ('Best team', recap.best_team_id, '#22c55e')}
+        </div>
+
+        {recap.regional_champions.length > 0 && (
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Regional #1 seeds</div>
+            <div className="flex flex-wrap gap-1.5">
+              {recap.regional_champions.map((rc) => <Badge key={rc.region} color="#26d0ce">{rc.region}: {teamName(rc.team_id)}</Badge>)}
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 p-2.5 text-sm">
+            <Star size={15} className="text-rift-gold" />
+            <div><div className="text-[10px] uppercase tracking-wide text-slate-500">Season MVP</div><div className="font-semibold text-slate-200">{mvp ? `${mvp.nickname} (${teamName(mvp.team_id)})` : 'TBD'}</div></div>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 p-2.5 text-sm">
+            <ArrowRightLeft size={15} className="text-rift-purple" />
+            <div><div className="text-[10px] uppercase tracking-wide text-slate-500">Biggest transfer</div><div className="font-semibold text-slate-200">{transfer && transfer.amount > 0 ? `${playerName(transfer.player_id)} → ${teamName(transfer.to_team_id)} (${formatMoney(transfer.amount)})` : 'None yet'}</div></div>
+          </div>
+        </div>
+
+        {pastSeasons.length > 0 && (
+          <div className="border-t border-border pt-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><History size={13} /> Completed seasons</div>
+            <div className="space-y-1.5">
+              {pastSeasons.map((entry) => {
+                const r = (entry.payload.recap ?? {}) as { worlds_champion_team_id?: string | null; msi_champion_team_id?: string | null };
+                const rewards = Array.isArray(entry.payload.rewards) ? entry.payload.rewards.length : 0;
+                const retired = Array.isArray(entry.payload.retired) ? entry.payload.retired.length : 0;
+                return (
+                  <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-bg-soft/30 px-3 py-1.5 text-xs">
+                    <span className="font-semibold text-slate-200">{entry.season_key}</span>
+                    <span className="text-slate-400">Worlds: {teamName(r.worlds_champion_team_id ?? null)} · MSI: {teamName(r.msi_champion_team_id ?? null)}</span>
+                    <span className="text-slate-600">{rewards} rewards · {retired} retired</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
 }

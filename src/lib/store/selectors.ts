@@ -93,6 +93,24 @@ export const incomingOffersForTeam = (db: Database, leagueId: string, teamId: st
       })
     : [];
 
+export interface SeasonEndLog {
+  id: string;
+  created_at: string;
+  season_key: string;
+  payload: Record<string, unknown>;
+}
+
+// Persisted season-end recap snapshots (newest first) from audit_logs.
+export const seasonEndLogsOf = (db: Database, leagueId: string): SeasonEndLog[] =>
+  db.audit_logs
+    .filter((entry) => entry.league_id === leagueId && entry.action_type === 'season_end')
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+    .map((entry) => {
+      let payload: Record<string, unknown> = {};
+      try { payload = entry.after_json ? JSON.parse(entry.after_json) : {}; } catch { payload = {}; }
+      return { id: entry.id, created_at: entry.created_at, season_key: String(payload.season_key ?? ''), payload };
+    });
+
 export interface BotActivityEntry {
   id: string;
   created_at: string;
