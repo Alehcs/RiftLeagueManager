@@ -10,6 +10,7 @@ import type {
   ImportJob,
   League,
   LeagueFormat,
+  LeagueRunPhase,
   MarketOffer,
   Match,
   Player,
@@ -36,6 +37,7 @@ import {
   formatForLeague,
 } from '@/services/schedule';
 import { canAfford } from '@/services/transfers';
+import { runBotMarket } from '@/services/market';
 import { roleInLeague, managedTeamId as managedTeamIdSel } from './selectors';
 import { generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
 import { buildLeagueExport, reidLeagueExport, isLeagueExport } from '@/services/leagueIO';
@@ -169,6 +171,9 @@ interface StoreState {
   submitMarketOffer: (input: { leagueId: string; playerId: string; teamId: string; transferFee: number; salary: number; rolePromise: RolePromise }) => string;
   cancelMarketOffer: (offerId: string) => void;
   resolveMarketOffers: (leagueId: string, force?: boolean) => void;
+  // bot market
+  runMarketTick: (leagueId: string) => void;
+  respondToMarketOffer: (offerId: string, accept: boolean) => void;
 
   // admins
   setLeagueAdmin: (leagueId: string, guestId: string, role: AdminRole, teamId?: string | null) => void;
@@ -323,8 +328,11 @@ export const useStore = create<StoreState>((set, get) => {
     const league = db.leagues.find((item) => item.id === leagueId);
     if (!league) return 0;
     const now = Date.now();
+    // Only auto-resolve free-agent offers here. Buy-offers for rostered players
+    // (bot bids on managed teams) are resolved manually by the receiving team.
     const candidates = db.market_offers.filter(
-      (offer) => offer.league_id === leagueId && offer.status === 'active' && (force || +new Date(offer.expires_at) <= now),
+      (offer) => offer.league_id === leagueId && offer.status === 'active' && (force || +new Date(offer.expires_at) <= now)
+        && db.players.some((player) => player.id === offer.player_id && !player.team_id),
     );
     const playerIds = [...new Set(candidates.map((offer) => offer.player_id))];
     let resolved = 0;
@@ -361,6 +369,43 @@ export const useStore = create<StoreState>((set, get) => {
       resolved++;
     }
     return resolved;
+  };
+
+  // Run one bounded bot market tick and persist the resulting activity feed as
+  // audit_logs entries (action_type 'bot_market'). Deterministic per tick: the
+  // tick index is the count of existing bot_market entries for the league, so
+  // advancing/ticking never replays the same actions and reloads add nothing.
+  const runBotMarketInDb = (leagueId: string, reason: string): number => {
+    const db = get().db;
+    const league = db.leagues.find((item) => item.id === leagueId);
+    if (!league || !league.run_started_at) return 0;
+    const teams = db.teams.filter((team) => team.league_id === leagueId && team.run_active !== false);
+    if (!teams.some((team) => team.is_bot)) return 0;
+    const players = db.players.filter((player) => player.league_id === leagueId);
+    const tick = db.audit_logs.filter((entry) => entry.league_id === leagueId && entry.action_type === 'bot_market').length;
+    const activity = runBotMarket({
+      league,
+      teams,
+      players,
+      offers: db.market_offers,
+      transferHistory: db.transfer_history,
+      tick,
+      reason,
+    });
+    for (const entry of activity) {
+      db.audit_logs.push({
+        id: uid('al'),
+        league_id: leagueId,
+        actor_guest_id: entry.team_id,
+        action_type: 'bot_market',
+        entity_type: 'market',
+        entity_id: entry.player_id ?? entry.team_id,
+        before_json: null,
+        after_json: JSON.stringify({ kind: entry.kind, message: entry.message, team_id: entry.team_id, player_id: entry.player_id, reason }),
+        created_at: entry.created_at,
+      });
+    }
+    return activity.length;
   };
 
   // Apply a single match result + advance bracket links + create games.
@@ -919,6 +964,9 @@ export const useStore = create<StoreState>((set, get) => {
           db.players.filter((player) => player.league_id === leagueId).forEach((player) => { player.hidden_until_reveal = false; });
         }
         if (next === 'completed') target.run_completed_at = nowISO();
+        // Bot teams trade during natural market windows only — never on render.
+        const MARKET_WINDOWS: LeagueRunPhase[] = ['preseason_week_1', 'preseason_week_2', 'preseason_week_3', 'midseason_break', 'offseason'];
+        if (MARKET_WINDOWS.includes(next)) runBotMarketInDb(leagueId, next.replaceAll('_', ' '));
         target.updated_at = nowISO();
         syncCircuitInDb(leagueId);
       }, { toast: { kind: 'success', message: `Run advanced to ${next.replaceAll('_', ' ')}` } });
@@ -1736,6 +1784,68 @@ export const useStore = create<StoreState>((set, get) => {
       commit(() => { resolveOffersInDb(leagueId, force); }, {
         toast: { kind: 'success', message: 'Market offers resolved' },
       });
+    },
+
+    // Controlled bot market tick (admin-only). Runs one bounded round of bot
+    // signings/sales/trades/offers; safe to invoke during any market window.
+    runMarketTick(leagueId) {
+      if (!requireAdmin(leagueId, 'run the market')) return;
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      if (!league || !league.run_started_at) {
+        reportError(new Error('Start the run before running the market.'));
+        return;
+      }
+      let count = 0;
+      commit(() => { count = runBotMarketInDb(leagueId, 'market tick'); }, {
+        toast: { kind: 'info', message: count > 0 ? `Bot market: ${count} move${count > 1 ? 's' : ''}` : 'Bot market: quiet window' },
+      });
+    },
+
+    // Accept or reject an incoming bot buy-offer for one of your players.
+    respondToMarketOffer(offerId, accept) {
+      const db0 = get().db;
+      const offer = db0.market_offers.find((item) => item.id === offerId);
+      if (!offer || offer.status !== 'active') return;
+      const player = db0.players.find((item) => item.id === offer.player_id);
+      if (!player || !player.team_id) {
+        reportError(new Error('That offer is no longer valid.'));
+        return;
+      }
+      // The selling team's manager (or an owner/admin) decides.
+      if (!requireTeam(offer.league_id, player.team_id, 'respond to offers')) return;
+      const buyer = db0.teams.find((item) => item.id === offer.team_id);
+      const seller = db0.teams.find((item) => item.id === player.team_id);
+      if (accept && (!buyer || !seller || buyer.budget < offer.transfer_fee)) {
+        reportError(new Error('The buying team can no longer afford this offer.'));
+        return;
+      }
+      commit(() => {
+        const db = get().db;
+        const target = db.market_offers.find((item) => item.id === offerId);
+        const p = db.players.find((item) => item.id === offer.player_id);
+        if (!target || !p) return;
+        if (accept) {
+          const buy = db.teams.find((item) => item.id === offer.team_id);
+          const sell = db.teams.find((item) => item.id === p.team_id);
+          const from = p.team_id;
+          if (buy) { buy.budget -= offer.transfer_fee; buy.updated_at = nowISO(); }
+          if (sell) { sell.budget += offer.transfer_fee; sell.updated_at = nowISO(); }
+          p.team_id = offer.team_id;
+          p.status = offer.role_promise === 'starter' ? 'active' : 'benched';
+          p.updated_at = nowISO();
+          db.transfer_history.push({
+            id: uid('th'), league_id: offer.league_id, player_id: p.id, from_team_id: from,
+            to_team_id: offer.team_id, transfer_type: 'trade', amount: offer.transfer_fee, created_at: nowISO(),
+          });
+          // Resolve every active offer for this player.
+          db.market_offers
+            .filter((item) => item.player_id === p.id && item.status === 'active')
+            .forEach((item) => { item.status = item.id === offerId ? 'accepted' : 'rejected'; item.resolved_at = nowISO(); });
+        } else {
+          target.status = 'rejected';
+          target.resolved_at = nowISO();
+        }
+      }, { toast: { kind: 'trade', message: accept ? `${teamShort(offer.team_id)} signed ${player.nickname}` : 'Offer rejected' } });
     },
 
     // -- admins ---------------------------------------------------------------

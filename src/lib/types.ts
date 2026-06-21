@@ -381,6 +381,12 @@ export interface MarketOffer {
   submitted_at: string;
   expires_at: string;
   resolved_at: string | null;
+  // Optional, additive fields used by bot-generated buy-offers. They carry the
+  // selling team at offer time and a short human-readable rationale. No DB
+  // migration is needed: data ops run through the store (mock persists these
+  // fields verbatim; Supabase entity CRUD is not wired to typed columns).
+  reason?: string | null;
+  from_team_id?: string | null;
 }
 
 export interface MatchSimulation {

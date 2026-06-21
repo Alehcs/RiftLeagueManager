@@ -1,4 +1,5 @@
-import type { AdminRole, Coach, Database, Game, League, LeagueMember, Match, Player, Team, Trade } from '@/lib/types';
+import type { AdminRole, Coach, Database, Game, League, LeagueMember, MarketOffer, Match, Player, Team, Trade } from '@/lib/types';
+import type { BotActivityKind } from '@/services/market';
 
 // ============================================================================
 // Pure selectors over the Database. Components call these with the live db
@@ -64,6 +65,65 @@ export const transferHistoryOf = (db: Database, leagueId: string) =>
 
 export const marketOffersOf = (db: Database, leagueId: string) =>
   db.market_offers.filter((offer) => offer.league_id === leagueId).sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at));
+
+// Active free-agent offers (target player currently has no team).
+export const freeAgentOffersOf = (db: Database, leagueId: string): MarketOffer[] =>
+  db.market_offers.filter((offer) => {
+    if (offer.league_id !== leagueId || offer.status !== 'active') return false;
+    const player = db.players.find((p) => p.id === offer.player_id);
+    return !!player && !player.team_id;
+  });
+
+// Active buy-offers for rostered players (bot bids on contracted players).
+export const incomingOffersOf = (db: Database, leagueId: string): MarketOffer[] =>
+  db.market_offers
+    .filter((offer) => {
+      if (offer.league_id !== leagueId || offer.status !== 'active') return false;
+      const player = db.players.find((p) => p.id === offer.player_id);
+      return !!player && !!player.team_id;
+    })
+    .sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at));
+
+// Incoming buy-offers targeting players on a specific team.
+export const incomingOffersForTeam = (db: Database, leagueId: string, teamId: string | null): MarketOffer[] =>
+  teamId
+    ? incomingOffersOf(db, leagueId).filter((offer) => {
+        const player = db.players.find((p) => p.id === offer.player_id);
+        return player?.team_id === teamId;
+      })
+    : [];
+
+export interface BotActivityEntry {
+  id: string;
+  created_at: string;
+  kind: BotActivityKind;
+  message: string;
+  team_id: string;
+  player_id: string | null;
+}
+
+// Bot market activity feed, newest first, parsed from audit_logs.
+export const botActivityOf = (db: Database, leagueId: string, limit = 30): BotActivityEntry[] =>
+  db.audit_logs
+    .filter((entry) => entry.league_id === leagueId && entry.action_type === 'bot_market')
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+    .slice(0, limit)
+    .map((entry) => {
+      let payload: { kind?: BotActivityKind; message?: string; team_id?: string; player_id?: string | null } = {};
+      try {
+        payload = entry.after_json ? JSON.parse(entry.after_json) : {};
+      } catch {
+        payload = {};
+      }
+      return {
+        id: entry.id,
+        created_at: entry.created_at,
+        kind: payload.kind ?? 'offer',
+        message: payload.message ?? '',
+        team_id: payload.team_id ?? entry.actor_guest_id,
+        player_id: payload.player_id ?? null,
+      };
+    });
 
 export const simulationOf = (db: Database, matchId: string) =>
   db.match_simulations.find((simulation) => simulation.match_id === matchId);
