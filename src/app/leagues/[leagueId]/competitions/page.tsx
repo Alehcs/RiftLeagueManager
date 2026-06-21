@@ -15,6 +15,7 @@ import {
   syncSeasonCircuit,
 } from '@/services/competition';
 import { standingsTable } from '@/services/standings';
+import { leagueTournaments, tournamentSummary } from '@/services/tournament';
 import { MatchCard } from '@/components/league/MatchCard';
 import { StandingsTable } from '@/components/league/StandingsTable';
 import { TeamLogo } from '@/components/ui/image';
@@ -77,6 +78,8 @@ export default function CompetitionsPage({ params }: { params: { leagueId: strin
           <QualificationCard target="worlds" title="Worlds qualification" results={qualificationResults} teams={teams} matches={matches} />
         </div>
       )}
+
+      <TournamentsRow db={db} league={league} />
 
       {circuit.mode !== 'quick_tournament' && (
         <SeasonRecapCard db={db} league={league} teams={teams} matches={matches} />
@@ -170,6 +173,38 @@ function QualificationCard({ target, title, results, teams, matches }: { target:
 
 function MatchList({ title, matches, leagueId, empty }: { title: string; matches: ReturnType<typeof useDb>['matches']; leagueId: string; empty: string }) {
   return <Card><CardHeader><CardTitle>{title}</CardTitle></CardHeader><CardBody className="space-y-2">{matches.length ? matches.map((match) => <MatchCard key={match.id} match={match} leagueId={leagueId} />) : <p className="text-sm text-slate-500">{empty}</p>}</CardBody></Card>;
+}
+
+function TournamentsRow({ db, league }: { db: ReturnType<typeof useDb>; league: NonNullable<ReturnType<typeof useLeague>> }) {
+  const tournaments = leagueTournaments(league);
+  const STATUS_COLOR = { upcoming: '#64748b', active: '#26d0ce', completed: '#c8a85a' } as const;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Trophy size={16} className="text-rift-gold" /> Tournaments</CardTitle>
+        <Link href={`/leagues/${league.id}/playoffs`} className="text-xs text-rift-cyan hover:underline">Brackets →</Link>
+      </CardHeader>
+      <CardBody className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {tournaments.map((def) => {
+          const s = tournamentSummary(db, league, def.key);
+          return (
+            <Link key={def.key} href={`/leagues/${league.id}/playoffs`} className="rounded-lg border border-border bg-bg-soft/30 p-3 transition-colors hover:border-rift-cyan/40">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">{def.scope === 'international' ? <Globe2 size={13} className="text-rift-cyan" /> : <Trophy size={13} className="text-rift-gold" />}{def.name}</span>
+                <Badge color={STATUS_COLOR[s.status]}>{s.stageLabel}</Badge>
+              </div>
+              {s.champion ? (
+                <div className="flex items-center gap-1.5 text-xs"><TeamLogo name={s.champion.name} shortName={s.champion.short_name} src={s.champion.logo_url} size="xs" /><span className="truncate font-medium text-rift-gold">{s.champion.short_name} champion</span></div>
+              ) : (
+                <div className="text-xs text-slate-500">{s.participants.length ? `${s.participants.length} teams · ${s.progress.completed}/${s.progress.total || '—'}` : 'Awaiting qualifiers'}</div>
+              )}
+              {s.mvp && s.champion && <div className="mt-1 text-[11px] text-slate-500">MVP {s.mvp.player.nickname}</div>}
+            </Link>
+          );
+        })}
+      </CardBody>
+    </Card>
+  );
 }
 
 function SeasonRecapCard({ db, league, teams, matches }: { db: ReturnType<typeof useDb>; league: NonNullable<ReturnType<typeof useLeague>>; teams: ReturnType<typeof teamsOf>; matches: ReturnType<typeof useDb>['matches'] }) {

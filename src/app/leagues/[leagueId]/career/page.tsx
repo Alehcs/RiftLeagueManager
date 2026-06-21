@@ -174,8 +174,15 @@ export default function CareerHubPage({ params }: { params: { leagueId: string }
 
         {qualification.enabled ? (
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-1.5"><Globe2 size={15} className="text-rift-cyan" /> Qualification race</CardTitle><Link href={href('/competitions')} className="text-xs text-rift-cyan hover:underline">Circuit →</Link></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-1.5"><Globe2 size={15} className="text-rift-cyan" /> Qualification race</CardTitle><Link href={href('/playoffs')} className="text-xs text-rift-cyan hover:underline">Brackets →</Link></CardHeader>
             <CardBody className="space-y-3">
+              {(qualification.myMsi || qualification.myWorlds) && (
+                <div className="flex items-center gap-2 rounded-lg border border-rift-gold/40 bg-rift-gold/10 px-3 py-2 text-sm">
+                  <Trophy size={15} className="text-rift-gold" />
+                  <span className="font-semibold text-rift-gold">Your team qualified for {qualification.myWorlds ? 'Worlds' : 'MSI'}!</span>
+                  <Link href={href('/playoffs')} className="ml-auto text-xs text-rift-cyan hover:underline">View →</Link>
+                </div>
+              )}
               <div className="flex flex-wrap gap-1.5 text-xs text-slate-400">{qualification.regions.length} region{qualification.regions.length === 1 ? '' : 's'}: {qualification.regions.map((r) => <Badge key={r} color="#64748b">{r}</Badge>)}</div>
               <QualBlock title="MSI" color="#26d0ce" teams={qualification.msi} mine={qualification.myMsi} />
               <QualBlock title="Worlds" color="#c8a85a" teams={qualification.worlds} mine={qualification.myWorlds} />
