@@ -3,16 +3,21 @@
 import { useState } from 'react';
 import type { Player, Team } from '@/lib/types';
 import { useDb } from '@/lib/store/hooks';
-import { teamById } from '@/lib/store/selectors';
+import { teamById, leagueById } from '@/lib/store/selectors';
 import { PlayerAvatar, TeamLogo } from '@/components/ui/image';
 import { RoleBadge, OverallBadge } from '@/components/ui/rating';
-import { PlayerStatusBadge, GeneratedBadge } from '@/components/common/badges';
+import { PlayerStatusBadge, GeneratedBadge, ContractBadge } from '@/components/common/badges';
+import { contractInfo } from '@/services/contracts';
+import { isScouted, overallEstimate, formatEstimate } from '@/services/scouting';
 import { PlayerDialog } from './PlayerDialog';
 import { flagEmoji, formatMoney } from '@/lib/utils';
 
 export function PlayerRow({ player, teams, canEdit, showTeam = true }: { player: Player; teams: Team[]; canEdit: boolean; showTeam?: boolean }) {
   const db = useDb();
   const team = teamById(db, player.team_id);
+  const season = leagueById(db, player.league_id)?.season ?? '';
+  const contract = contractInfo(player, season);
+  const scouted = isScouted(player);
   const [open, setOpen] = useState(false);
 
   return (
@@ -26,6 +31,7 @@ export function PlayerRow({ player, teams, canEdit, showTeam = true }: { player:
           <div className="flex items-center gap-1.5">
             <span className="truncate font-semibold text-slate-100">{player.nickname}</span>
             <RoleBadge role={player.role} />
+            <ContractBadge status={contract.status} years={contract.years_remaining} />
             <GeneratedBadge show={player.generated} />
           </div>
           <div className="flex items-center gap-1.5 truncate text-xs text-slate-500">
@@ -52,7 +58,11 @@ export function PlayerRow({ player, teams, canEdit, showTeam = true }: { player:
           <div className="text-slate-600">{formatMoney(player.salary)}/yr</div>
         </div>
 
-        <OverallBadge value={player.rating_overall} size="sm" />
+        {scouted ? (
+          <OverallBadge value={player.rating_overall} size="sm" />
+        ) : (
+          <span className="rounded-md border border-dashed border-border bg-bg-soft/60 px-1.5 py-0.5 text-xs font-semibold text-slate-400" title="Estimated — scout to reveal">~{formatEstimate(overallEstimate(player))}</span>
+        )}
       </button>
 
       {open && <PlayerDialog player={player} open={open} onClose={() => setOpen(false)} teams={teams} canEdit={canEdit} />}

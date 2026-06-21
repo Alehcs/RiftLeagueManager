@@ -47,6 +47,12 @@ import {
   nextSeasonKey,
   resetTeamForNewSeason,
 } from '@/services/season';
+import {
+  assignContract,
+  expireContracts,
+  runContractsOffseason,
+  type ContractActivity,
+} from '@/services/contracts';
 import { roleInLeague, managedTeamId as managedTeamIdSel } from './selectors';
 import { generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
 import { buildLeagueExport, reidLeagueExport, isLeagueExport } from '@/services/leagueIO';
@@ -144,6 +150,8 @@ interface StoreState {
   releasePlayer: (playerId: string) => void;
   sellPlayer: (playerId: string, price?: number) => void;
   setPlayerStatus: (playerId: string, status: Player['status']) => void;
+  scoutPlayer: (playerId: string) => void;
+  renewContract: (playerId: string, input: { salary: number; years: number; rolePromise?: RolePromise }) => void;
 
   // coaches
   createCoach: (leagueId: string, input: Partial<Coach> & { nickname: string }) => string;
@@ -178,7 +186,7 @@ interface StoreState {
   setTradeStatus: (tradeId: string, status: TradeStatus) => void;
 
   // free-agent offers
-  submitMarketOffer: (input: { leagueId: string; playerId: string; teamId: string; transferFee: number; salary: number; rolePromise: RolePromise }) => string;
+  submitMarketOffer: (input: { leagueId: string; playerId: string; teamId: string; transferFee: number; salary: number; rolePromise: RolePromise; contractYears?: number }) => string;
   cancelMarketOffer: (offerId: string) => void;
   resolveMarketOffers: (leagueId: string, force?: boolean) => void;
   // bot market
@@ -365,8 +373,13 @@ export const useStore = create<StoreState>((set, get) => {
       winner.team.budget -= winner.offer.transfer_fee;
       winner.team.updated_at = nowISO();
       player.team_id = winner.team.id;
-      player.salary = winner.offer.salary;
       player.status = winner.offer.role_promise === 'starter' ? 'active' : 'benched';
+      // Grant a contract: offered salary + a season-anchored term.
+      assignContract(player, league.season, {
+        salary: winner.offer.salary,
+        years: winner.offer.contract_years,
+        isStarter: winner.offer.role_promise === 'starter',
+      });
       player.updated_at = nowISO();
       offers.forEach((offer) => {
         offer.status = offer.id === winner.offer.id ? 'accepted' : 'rejected';
@@ -422,6 +435,25 @@ export const useStore = create<StoreState>((set, get) => {
     return activity.length;
   };
 
+  // Persist contract renew/release/expire activity into the same feed bots use.
+  const pushContractActivity = (leagueId: string, activity: ContractActivity[]) => {
+    const db = get().db;
+    const actorGuestId = get().currentGuestId;
+    for (const entry of activity) {
+      db.audit_logs.push({
+        id: uid('al'),
+        league_id: leagueId,
+        actor_guest_id: actorGuestId,
+        action_type: 'bot_market',
+        entity_type: 'contract',
+        entity_id: entry.player_id ?? entry.team_id,
+        before_json: null,
+        after_json: JSON.stringify({ kind: entry.kind, message: entry.message, team_id: entry.team_id, player_id: entry.player_id }),
+        created_at: entry.created_at,
+      });
+    }
+  };
+
   // Apply season-end effects once per season: prize money, bounded player
   // development, fatigue/morale recovery, conservative retirements, and a
   // persisted recap snapshot (audit_logs 'season_end'). Idempotent via a
@@ -445,6 +477,8 @@ export const useStore = create<StoreState>((set, get) => {
     applyPlayerDevelopment(players, seed);
     applySeasonRecovery(teams, players);
     const retired = applyRetirements(players, seed);
+    // Bots renew key players and release weak/surplus expiring ones (rosters stay valid).
+    pushContractActivity(leagueId, runContractsOffseason(league, teams, players, seed));
     const recap = seasonRecap(league, teams, matches, players, db.match_simulations, db.transfer_history);
     db.audit_logs.push({
       id: uid('al'),
@@ -1190,6 +1224,9 @@ export const useStore = create<StoreState>((set, get) => {
         }
         db.players.push(...generateFreeAgents(league, `${league.run_seed ?? league.id}:${newSeason}`));
         league.season = newSeason;
+        // Expire contracts whose end season has passed; sole starters are
+        // auto-renewed one year so rosters stay valid.
+        pushContractActivity(leagueId, expireContracts(league, db.players.filter((player) => player.league_id === leagueId), newSeason));
         league.run_phase = 'preseason_week_1';
         league.current_run_week = 1;
         league.run_completed_at = null;
@@ -1424,6 +1461,11 @@ export const useStore = create<StoreState>((set, get) => {
           if (!from && cost > 0) t.budget -= cost;
           p.team_id = teamId;
           p.status = 'active';
+          // Signing a free agent grants a fresh, season-anchored contract.
+          if (!from) {
+            const league = db.leagues.find((item) => item.id === p.league_id);
+            if (league) assignContract(p, league.season, { isStarter: true });
+          }
           p.updated_at = nowISO();
           db.transfer_history.push({ id: uid('th'), league_id: p.league_id, player_id: playerId, from_team_id: from, to_team_id: teamId, transfer_type: from ? 'trade' : 'signing', amount: cost, created_at: nowISO() });
         },
@@ -1474,6 +1516,43 @@ export const useStore = create<StoreState>((set, get) => {
         const p = get().db.players.find((x) => x.id === playerId);
         if (p) Object.assign(p, { status, updated_at: nowISO() });
       });
+    },
+
+    // Reveal a player's exact ratings (raise confidence to full). Any league
+    // manager/admin can scout; knowledge is shared league-wide.
+    scoutPlayer(playerId) {
+      const p0 = get().db.players.find((x) => x.id === playerId);
+      if (!p0) return;
+      const role = roleOf(p0.league_id);
+      if (role !== 'owner' && role !== 'admin' && role !== 'manager') {
+        reportError(new Error('Claim a team or get manager access to scout players.'));
+        return;
+      }
+      if ((p0.confidence ?? 0) >= 0.6) return; // already known
+      commit(() => {
+        const p = get().db.players.find((x) => x.id === playerId);
+        if (p) { p.confidence = 1; p.updated_at = nowISO(); }
+      }, { toast: { kind: 'success', message: `Scouted ${p0.nickname}` } });
+    },
+
+    // Renew/extend a rostered player's contract (salary + extra seasons).
+    renewContract(playerId, input) {
+      const p0 = get().db.players.find((x) => x.id === playerId);
+      if (!p0 || !p0.team_id) {
+        reportError(new Error('Only contracted players can be renewed.'));
+        return;
+      }
+      if (!requireTeam(p0.league_id, p0.team_id, 'renew contracts')) return;
+      const salary = Math.max(15_000, Math.round(input.salary));
+      const years = Math.max(1, Math.min(4, Math.round(input.years)));
+      commit(() => {
+        const db = get().db;
+        const p = db.players.find((x) => x.id === playerId);
+        const league = db.leagues.find((item) => item.id === p0.league_id);
+        if (!p || !league) return;
+        assignContract(p, league.season, { salary, years });
+        if (input.rolePromise) p.status = input.rolePromise === 'starter' ? 'active' : 'benched';
+      }, { toast: { kind: 'success', message: `${p0.nickname} renewed (${years}y)` } });
     },
 
     // -- coaches --------------------------------------------------------------
@@ -1882,6 +1961,7 @@ export const useStore = create<StoreState>((set, get) => {
           submitted_at: submittedAt,
           expires_at: expiresAt,
           resolved_at: null,
+          contract_years: input.contractYears != null ? Math.max(1, Math.min(4, Math.round(input.contractYears))) : undefined,
         });
       }, { toast: { kind: 'success', message: `Offer submitted for ${player.nickname}` } });
       return id;
@@ -1954,6 +2034,9 @@ export const useStore = create<StoreState>((set, get) => {
           if (sell) { sell.budget += offer.transfer_fee; sell.updated_at = nowISO(); }
           p.team_id = offer.team_id;
           p.status = offer.role_promise === 'starter' ? 'active' : 'benched';
+          // The buyer hands the player a fresh contract on the offered salary.
+          const league = db.leagues.find((item) => item.id === offer.league_id);
+          if (league) assignContract(p, league.season, { salary: offer.salary, years: offer.contract_years, isStarter: offer.role_promise === 'starter' });
           p.updated_at = nowISO();
           db.transfer_history.push({
             id: uid('th'), league_id: offer.league_id, player_id: p.id, from_team_id: from,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink, HandCoins } from 'lucide-react';
+import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink, HandCoins, Search, FileSignature, RefreshCw } from 'lucide-react';
 import type { Player, Team } from '@/lib/types';
 import { useStore } from '@/lib/store/store';
 import { useDb, useLeagueRole, useManagedTeamId, canAdminister, canManageTeam } from '@/lib/store/hooks';
@@ -11,10 +11,12 @@ import { Button, Badge } from '@/components/ui/primitives';
 import { Input, Select } from '@/components/ui/form';
 import { PlayerAvatar } from '@/components/ui/image';
 import { RoleBadge, RatingBar, OverallBadge } from '@/components/ui/rating';
-import { PlayerStatusBadge, GeneratedBadge, SourceBadge, PlayerCategoryBadge } from '@/components/common/badges';
+import { PlayerStatusBadge, GeneratedBadge, SourceBadge, PlayerCategoryBadge, ContractBadge } from '@/components/common/badges';
 import { PlayerForm } from './PlayerForm';
 import { flagEmoji, formatMoney, formatMoneyFull } from '@/lib/utils';
 import { isPreseason, playerCategory, runPhase } from '@/services/run';
+import { contractInfo } from '@/services/contracts';
+import { isScouted, scoutReport, formatEstimate } from '@/services/scouting';
 import type { RolePromise } from '@/lib/types';
 
 export function PlayerDialog({
@@ -37,6 +39,8 @@ export function PlayerDialog({
   const sellPlayer = useStore((s) => s.sellPlayer);
   const setPlayerStatus = useStore((s) => s.setPlayerStatus);
   const submitMarketOffer = useStore((s) => s.submitMarketOffer);
+  const scoutPlayer = useStore((s) => s.scoutPlayer);
+  const renewContract = useStore((s) => s.renewContract);
   const role = useLeagueRole(player.league_id);
   const managedTeam = useManagedTeamId(player.league_id);
 
@@ -44,6 +48,7 @@ export function PlayerDialog({
   // player or signing a free agent is scoped to the team the user manages.
   const isAdmin = canAdminister(role);
   const canManageThis = canManageTeam(role, managedTeam, player.team_id);
+  const canScout = role === 'owner' || role === 'admin' || role === 'manager';
   const signTeams = isAdmin ? teams : teams.filter((t) => t.id === managedTeam);
   const canSign = signTeams.length > 0;
 
@@ -52,12 +57,20 @@ export function PlayerDialog({
   const [transferFee, setTransferFee] = useState(player.value);
   const [salary, setSalary] = useState(player.salary);
   const [rolePromise, setRolePromise] = useState<RolePromise>('starter');
+  const [offerYears, setOfferYears] = useState(2);
+  const [showRenew, setShowRenew] = useState(false);
+  const [renewSalary, setRenewSalary] = useState(player.salary);
+  const [renewYears, setRenewYears] = useState(2);
 
   const team = teamById(db, player.team_id);
   const league = db.leagues.find((item) => item.id === player.league_id);
+  const season = league?.season ?? '';
   const phase = league ? runPhase(league) : 'lobby';
   const useOffers = isPreseason(phase) || phase === 'regular_season';
   const activeOffers = db.market_offers.filter((offer) => offer.player_id === player.id && offer.status === 'active');
+  const scouted = isScouted(player);
+  const contract = contractInfo(player, season);
+  const report = scoutReport(player, season);
 
   return (
     <Dialog
@@ -100,27 +113,57 @@ export function PlayerDialog({
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-slate-500">{team ? team.name : 'Free agent'}</span>
+                <ContractBadge status={contract.status} years={contract.years_remaining} />
                 <SourceBadge name={player.source_name} />
                 <GeneratedBadge show={player.generated} />
-                {player.confidence != null && <span className="text-slate-600">conf {Math.round(player.confidence * 100)}%</span>}
               </div>
             </div>
-            <OverallBadge value={player.rating_overall} size="lg" />
+            {scouted ? (
+              <OverallBadge value={player.rating_overall} size="lg" />
+            ) : (
+              <div className="rounded-lg border border-border bg-bg-soft/60 px-3 py-2 text-center">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Est. OVR</div>
+                <div className="text-lg font-bold text-slate-300">{formatEstimate(report.overall)}</div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2 text-center">
             <Meta label="Value" value={formatMoney(player.value)} />
             <Meta label="Salary" value={formatMoney(player.salary)} />
-            <Meta label="Potential" value={`${player.potential ?? player.rating_overall}`} />
+            <Meta label="Potential" value={scouted ? `${player.potential ?? player.rating_overall}` : formatEstimate(report.potential)} />
           </div>
 
-          <div className="space-y-2 rounded-lg border border-border bg-bg-soft/40 p-3">
-            <RatingBar label="Laning" value={player.rating_laning} />
-            <RatingBar label="Teamfight" value={player.rating_teamfighting} />
-            <RatingBar label="Macro" value={player.rating_macro} />
-            <RatingBar label="Mechanics" value={player.rating_mechanics} />
-            <RatingBar label="Consistency" value={player.rating_consistency} />
+          {/* Contract + scouting */}
+          <div className="grid gap-2 rounded-lg border border-border bg-bg-soft/40 p-3 sm:grid-cols-3">
+            <Meta label="Contract" value={contract.status === 'free_agent' ? 'Free agent' : contract.years_remaining != null ? `${Math.max(0, contract.years_remaining)} season${contract.years_remaining === 1 ? '' : 's'}` : '—'} />
+            <Meta label="Buyout" value={player.team_id ? formatMoney(contract.buyout) : '—'} />
+            <Meta label="Expected wage" value={`${formatMoney(report.expectedSalary)}/yr`} />
           </div>
+
+          {scouted ? (
+            <div className="space-y-2 rounded-lg border border-border bg-bg-soft/40 p-3">
+              <RatingBar label="Laning" value={player.rating_laning} />
+              <RatingBar label="Teamfight" value={player.rating_teamfighting} />
+              <RatingBar label="Macro" value={player.rating_macro} />
+              <RatingBar label="Mechanics" value={player.rating_mechanics} />
+              <RatingBar label="Consistency" value={player.rating_consistency} />
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-lg border border-dashed border-border bg-bg-soft/40 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scout report</span>
+                <Badge color={report.recommendation === 'sign' ? '#22c55e' : report.recommendation === 'prospect' ? '#3b82f6' : report.recommendation === 'avoid' ? '#ef4444' : '#eab308'}>{report.recommendationLabel}</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><span className="text-slate-500">Strengths: </span><span className="text-rift-green">{report.strengths.join(', ')}</span></div>
+                <div><span className="text-slate-500">Weaknesses: </span><span className="text-rift-red">{report.weaknesses.join(', ')}</span></div>
+                <div><span className="text-slate-500">Est. potential: </span><span className="text-slate-300">{formatEstimate(report.potential)}</span></div>
+                <div><span className="text-slate-500">Exact stats hidden until scouted.</span></div>
+              </div>
+              {canScout && <div className="flex justify-end"><Button variant="secondary" size="sm" onClick={() => scoutPlayer(player.id)}><Search size={14} /> Scout player</Button></div>}
+            </div>
+          )}
 
           {player.external_url && (
             <a href={player.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-rift-cyan hover:underline">
@@ -141,8 +184,11 @@ export function PlayerDialog({
                     <Select value={rolePromise} onChange={(e) => setRolePromise(e.target.value as RolePromise)}><option value="starter">Starter role</option><option value="rotation">Rotation role</option><option value="development">Development role</option></Select>
                     <Input type="number" min={0} value={transferFee} onChange={(e) => setTransferFee(Number(e.target.value))} aria-label="Transfer fee" />
                     <Input type="number" min={0} value={salary} onChange={(e) => setSalary(Number(e.target.value))} aria-label="Salary offer" />
+                    <Select value={offerYears} onChange={(e) => setOfferYears(Number(e.target.value))} aria-label="Contract length">
+                      {[1, 2, 3, 4].map((y) => <option key={y} value={y}>{y} season{y > 1 ? 's' : ''}</option>)}
+                    </Select>
                   </div>
-                  <div className="flex justify-end"><Button variant="primary" size="sm" disabled={!signTeam} onClick={() => { submitMarketOffer({ leagueId: player.league_id, playerId: player.id, teamId: signTeam, transferFee, salary, rolePromise }); onClose(); }}><HandCoins size={14} /> Submit offer</Button></div>
+                  <div className="flex justify-end"><Button variant="primary" size="sm" disabled={!signTeam} onClick={() => { submitMarketOffer({ leagueId: player.league_id, playerId: player.id, teamId: signTeam, transferFee, salary, rolePromise, contractYears: offerYears }); onClose(); }}><HandCoins size={14} /> Submit offer</Button></div>
                   {activeOffers.length > 0 && <div className="space-y-1 rounded-lg border border-border bg-bg-soft/40 p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">Competing offers</div>{activeOffers.map((offer) => <div key={offer.id} className="flex flex-wrap justify-between gap-2 text-xs text-slate-400"><span>{teams.find((item) => item.id === offer.team_id)?.short_name} · {offer.role_promise}</span><span>{formatMoney(offer.transfer_fee)} + {formatMoney(offer.salary)}/yr</span></div>)}</div>}
                 </div>
               ) : (
@@ -166,6 +212,9 @@ export function PlayerDialog({
                       {player.status === 'active' ? 'Bench' : 'Activate'}
                     </Button>
                   )}
+                  <Button variant="secondary" size="sm" onClick={() => { setRenewSalary(player.salary); setRenewYears(2); setShowRenew((v) => !v); }}>
+                    <RefreshCw size={14} /> Renew
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => releasePlayer(player.id)}>
                     <LogOut size={14} /> Release
                   </Button>
@@ -188,6 +237,26 @@ export function PlayerDialog({
             {!canSign && !player.team_id && <span className="text-xs text-slate-500">View only — claim a team to sign players.</span>}
             {player.team_id && !canManageThis && !isAdmin && <span className="text-xs text-slate-500">Managed by another team.</span>}
           </div>
+
+          {showRenew && canManageThis && player.team_id && (
+            <div className="space-y-3 rounded-lg border border-border bg-bg-soft/40 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><FileSignature size={13} /> Renew contract</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="text-xs text-slate-400">New salary
+                  <Input type="number" min={0} value={renewSalary} onChange={(e) => setRenewSalary(Number(e.target.value))} aria-label="New salary" />
+                </label>
+                <label className="text-xs text-slate-400">Length
+                  <Select value={renewYears} onChange={(e) => setRenewYears(Number(e.target.value))} aria-label="Contract length">
+                    {[1, 2, 3, 4].map((y) => <option key={y} value={y}>{y} season{y > 1 ? 's' : ''}</option>)}
+                  </Select>
+                </label>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">Expected wage {formatMoney(report.expectedSalary)}/yr</span>
+                <Button variant="primary" size="sm" onClick={() => { renewContract(player.id, { salary: renewSalary, years: renewYears }); setShowRenew(false); }}><RefreshCw size={14} /> Confirm renewal</Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Dialog>

@@ -13,7 +13,8 @@ import type {
 import { PLAYER_ROLES } from '@/lib/types';
 import { Rng } from '@/lib/rng';
 import { clamp, nowISO, uid } from '@/lib/utils';
-import { generateCoachRatings, generatePlayerRatings, playerSalary, playerValue } from '@/services/ratings';
+import { generateCoachRatings, generatePlayerRatings, playerValue } from '@/services/ratings';
+import { contractYears, estimateSalary, seasonEndDate, seasonYear } from '@/services/contracts';
 import type { MatchSimResult } from '@/services/simulation';
 import { competitionMode } from '@/services/competition';
 
@@ -145,7 +146,13 @@ function makePlayer(
   });
   const overall = clamp(ratings.rating_overall, 55, 98);
   const value = playerValue(overall, role, age);
+  const category = playerCategory(overall);
+  const potential = clamp(overall + rng.int(age <= 20 ? 4 : 0, age <= 20 ? 12 : 6), overall, 99);
   const ts = nowISO();
+  // Rostered players get a season-anchored contract; free agents carry none.
+  const contractUntil = team
+    ? seasonEndDate(seasonYear(league.season) + contractYears({ category, age, isStarter: status === 'active', rng }))
+    : null;
   return {
     id: uid('player'),
     league_id: league.id,
@@ -161,12 +168,12 @@ function makePlayer(
     source_url: null,
     confidence: 0.2,
     value,
-    salary: playerSalary(value, rng),
-    contract_until: new Date(Date.now() + rng.int(10, 30) * 30 * 86400000).toISOString(),
+    salary: estimateSalary(overall, role, age, category, potential, rng),
+    contract_until: contractUntil,
     ...ratings,
     rating_overall: overall,
-    category: playerCategory(overall),
-    potential: clamp(overall + rng.int(age <= 20 ? 4 : 0, age <= 20 ? 12 : 6), overall, 99),
+    category,
+    potential,
     hidden_until_reveal: !!team,
     performance_form: 50,
     morale: 50,

@@ -9,15 +9,16 @@ import {
 } from '@/lib/store/selectors';
 import { PLAYER_ROLES, type Player, type PlayerCategory, type Role } from '@/lib/types';
 import { ROLE_META, regionBadge } from '@/lib/constants';
-import { salaryCommitment } from '@/services/transfers';
 import { playerCategory } from '@/services/run';
+import { contractInfo, wageSummary, type ContractStatus } from '@/services/contracts';
+import { ContractBadge } from '@/components/common/badges';
 import { PlayerRow } from '@/components/player/PlayerRow';
 import { CoachRow } from '@/components/coach/CoachRow';
 import { TradeDialog } from '@/components/trade/TradeDialog';
 import { Card, CardHeader, CardTitle, CardBody, Button, Stat, EmptyState, Badge } from '@/components/ui/primitives';
 import { useDialog } from '@/components/ui/dialog';
 import { Input, Select } from '@/components/ui/form';
-import { formatDate, formatMoney, timeAgo } from '@/lib/utils';
+import { formatMoney, timeAgo } from '@/lib/utils';
 import { useStore } from '@/lib/store/store';
 
 const CATEGORIES: PlayerCategory[] = ['Rookie', 'Prospect', 'Starter', 'Pro', 'Star', 'Superstar', 'Legend'];
@@ -49,6 +50,7 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<PlayerCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [contractFilter, setContractFilter] = useState<ContractStatus | 'all'>('all');
   const leagueId = league?.id ?? '';
   const faOffers = freeAgentOffersOf(db, leagueId);
 
@@ -83,6 +85,7 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
       if (roleFilter !== 'all' && p.role !== roleFilter) return false;
       if (p.rating_overall < minRating || p.rating_overall > maxRating) return false;
       if (categoryFilter !== 'all' && (p.category ?? playerCategory(p.rating_overall)) !== categoryFilter) return false;
+      if (contractFilter !== 'all' && contractInfo(p, league.season).status !== contractFilter) return false;
       if (teamFilter !== 'all' && (teamFilter === 'free' ? !!p.team_id : p.team_id !== teamFilter)) return false;
       if (regionFilter !== 'all') {
         if (regionFilter === 'free') { if (p.team_id) return false; }
@@ -94,11 +97,13 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
     .sort((a, b) => b.rating_overall - a.rating_overall)
     .slice(0, 60);
 
-  // contracts expiring soonest (rostered players)
+  // rostered players whose contracts are expiring (<= 1 season left)
   const expiring = allPlayers
-    .filter((p) => p.team_id && p.contract_until)
-    .sort((a, b) => +new Date(a.contract_until!) - +new Date(b.contract_until!))
-    .slice(0, 6);
+    .filter((p) => p.team_id && contractInfo(p, league.season).status === 'expiring')
+    .sort((a, b) => (contractInfo(a, league.season).years_remaining ?? 9) - (contractInfo(b, league.season).years_remaining ?? 9))
+    .slice(0, 8);
+  const myTeam = managedTeam ? teams.find((t) => t.id === managedTeam) : undefined;
+  const wages = myTeam ? wageSummary(myTeam, league, allPlayers, allCoaches) : null;
 
   // Would accepting this offer leave the selling team without a starter at the
   // player's role? Surfaced as a warning (accept is still allowed).
@@ -226,6 +231,12 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
                   <option value="all">Any category</option>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
+                <Select className="w-32" value={contractFilter} onChange={(e) => setContractFilter(e.target.value as ContractStatus | 'all')}>
+                  <option value="all">Any contract</option>
+                  <option value="contracted">Contracted</option>
+                  <option value="expiring">Expiring</option>
+                  <option value="free_agent">Free agent</option>
+                </Select>
                 <Select className="w-28" value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}>
                   <option value={0}>Min any</option>
                   <option value={70}>Min 70</option>
@@ -282,22 +293,39 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
             </CardBody>
           </Card>
 
+          {wages && myTeam && (
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-1.5"><Wallet size={14} /> {myTeam.short_name} budget &amp; wages</CardTitle></CardHeader>
+              <CardBody className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg border border-border bg-bg-soft/40 px-2 py-2"><div className="text-[10px] uppercase tracking-wide text-slate-500">Transfer budget</div><div className="mt-0.5 text-sm font-semibold text-rift-gold">{formatMoney(wages.transferBudget)}</div></div>
+                  <div className="rounded-lg border border-border bg-bg-soft/40 px-2 py-2"><div className="text-[10px] uppercase tracking-wide text-slate-500">Wage room</div><div className={`mt-0.5 text-sm font-semibold ${wages.wageRoom < 0 ? 'text-rift-red' : 'text-rift-green'}`}>{formatMoney(wages.wageRoom)}</div></div>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400"><span>Wage bill</span><span>{formatMoney(wages.wageBill)} / {formatMoney(wages.wageCap)}</span></div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-bg-soft">
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(100, (wages.wageBill / Math.max(1, wages.wageCap)) * 100)}%`, backgroundColor: wages.over ? '#ef4444' : wages.wageBill / Math.max(1, wages.wageCap) > 0.85 ? '#eab308' : '#22c55e' }} />
+                </div>
+                {wages.over && <p className="flex items-center gap-1 text-xs text-rift-red"><AlertTriangle size={12} /> Wage bill exceeds the soft cap.</p>}
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-1.5"><Wallet size={14} /> Team budgets</CardTitle>
+              <CardTitle className="flex items-center gap-1.5"><Wallet size={14} /> Team budgets &amp; wages</CardTitle>
             </CardHeader>
             <CardBody className="space-y-2.5">
               {[...teams].sort((a, b) => b.budget - a.budget).map((t) => {
-                const sal = salaryCommitment(t, allPlayers, allCoaches);
-                const ratio = Math.min(100, (sal / Math.max(1, t.budget)) * 100);
+                const w = wageSummary(t, league, allPlayers, allCoaches);
+                const ratio = Math.min(100, (w.wageBill / Math.max(1, w.wageCap)) * 100);
                 return (
                   <div key={t.id}>
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-300">{t.short_name}{t.is_bot && <span className="ml-1 text-[10px] text-slate-600">bot</span>}</span>
-                      <span className="text-slate-400">{formatMoney(t.budget)}</span>
+                      <span className="text-slate-400">{formatMoney(t.budget)} · wage {formatMoney(w.wageBill)}</span>
                     </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg-soft">
-                      <div className="h-full rounded-full" style={{ width: `${ratio}%`, backgroundColor: ratio > 90 ? '#ef4444' : ratio > 70 ? '#eab308' : '#22c55e' }} />
+                      <div className="h-full rounded-full" style={{ width: `${ratio}%`, backgroundColor: w.over ? '#ef4444' : ratio > 85 ? '#eab308' : '#22c55e' }} />
                     </div>
                   </div>
                 );
@@ -313,13 +341,13 @@ export default function MarketPage({ params }: { params: { leagueId: string } })
               {expiring.map((p) => {
                 const team = teams.find((t) => t.id === p.team_id);
                 return (
-                  <div key={p.id} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-300">{p.nickname} <span className="text-xs text-slate-600">{team?.short_name}</span></span>
-                    <span className="text-xs text-slate-500">{p.contract_until ? formatDate(p.contract_until) : '—'}</span>
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate text-slate-300">{p.nickname} <span className="text-xs text-slate-600">{team?.short_name}</span></span>
+                    <ContractBadge status="expiring" years={contractInfo(p, league.season).years_remaining} />
                   </div>
                 );
               })}
-              {expiring.length === 0 && <p className="text-sm text-slate-500">No contract data.</p>}
+              {expiring.length === 0 && <p className="text-sm text-slate-500">No expiring contracts.</p>}
             </CardBody>
           </Card>
         </div>

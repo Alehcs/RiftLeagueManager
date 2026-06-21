@@ -5,6 +5,7 @@ import { FORMAT_META, REGION_META, TIER_META, regionBadge } from '@/lib/constant
 import type { LeagueFormat, LeagueRunPhase, LeagueTier, MatchStatus, PlayerCategory, PlayerStatus } from '@/lib/types';
 import { Sparkles } from 'lucide-react';
 import { RUN_PHASE_LABELS } from '@/services/run';
+import { CONTRACT_STATUS_META, type ContractStatus } from '@/services/contracts';
 
 export function TierBadge({ tier }: { tier: LeagueTier }) {
   const m = TIER_META[tier];
@@ -42,6 +43,12 @@ export function PlayerStatusBadge({ status }: { status: PlayerStatus }) {
     retired: { c: '#64748b', t: 'Retired' },
   };
   return <Badge color={map[status].c}>{map[status].t}</Badge>;
+}
+
+export function ContractBadge({ status, years }: { status: ContractStatus; years?: number | null }) {
+  const meta = CONTRACT_STATUS_META[status];
+  const suffix = status === 'contracted' || status === 'expiring' ? (years != null ? ` ${Math.max(0, years)}y` : '') : '';
+  return <Badge color={meta.color}>{meta.label}{suffix}</Badge>;
 }
 
 export function RunPhaseBadge({ phase }: { phase: LeagueRunPhase }) {

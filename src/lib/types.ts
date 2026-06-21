@@ -387,6 +387,8 @@ export interface MarketOffer {
   // fields verbatim; Supabase entity CRUD is not wired to typed columns).
   reason?: string | null;
   from_team_id?: string | null;
+  // Offered contract length in seasons (free-agent offers). Client-only.
+  contract_years?: number;
 }
 
 export interface MatchSimulation {
