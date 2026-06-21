@@ -5,11 +5,12 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { canAdminister, useLeagueRole, useManagedTeamId } from '@/lib/store/hooks';
 import {
-  LayoutGrid, ListOrdered, CalendarDays, Users2, User, GraduationCap, Gamepad2,
+  LayoutGrid, LayoutDashboard, ListOrdered, CalendarDays, Users2, User, GraduationCap, Gamepad2,
   Store, ArrowLeftRight, Trophy, Settings, Shield, Globe2,
 } from 'lucide-react';
 
 const TABS = [
+  { seg: 'career', label: 'Career Hub', icon: LayoutDashboard },
   { seg: 'lobby', label: 'Run', icon: Gamepad2 },
   { seg: '', label: 'Overview', icon: LayoutGrid },
   { seg: 'competitions', label: 'Circuit', icon: Globe2 },

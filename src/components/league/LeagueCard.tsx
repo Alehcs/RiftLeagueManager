@@ -19,7 +19,7 @@ export function LeagueCard({ league }: { league: League }) {
   const progress = matches.length ? Math.round((completed / matches.length) * 100) : 0;
 
   return (
-    <Link href={`/leagues/${league.id}/lobby`}>
+    <Link href={`/leagues/${league.id}/career`}>
       <Card hover className="group h-full overflow-hidden">
         <div className="relative h-20 bg-gradient-to-br from-bg-elevated to-bg-soft">
           <div

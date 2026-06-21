@@ -93,7 +93,7 @@ export default function DashboardPage() {
                 disabled={!roomCode.trim()}
                 onClick={async () => {
                   const id = await joinLeague(roomCode, recoveryCode || undefined);
-                  if (id) router.push(`/leagues/${id}/lobby`);
+                  if (id) router.push(`/leagues/${id}/career`);
                 }}
               >
                 Join
