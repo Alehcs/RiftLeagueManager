@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink, HandCoins, Search, FileSignature, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { Pencil, Trash2, LogOut, DollarSign, UserPlus, ExternalLink, HandCoins, Search, FileSignature, RefreshCw, UserSquare } from 'lucide-react';
 import type { Player, Team } from '@/lib/types';
 import { useStore } from '@/lib/store/store';
 import { useDb, useLeagueRole, useManagedTeamId, canAdminister, canManageTeam } from '@/lib/store/hooks';
@@ -127,6 +128,10 @@ export function PlayerDialog({
               </div>
             )}
           </div>
+
+          <Link href={`/leagues/${player.league_id}/players/${player.id}`} onClick={onClose} className="flex items-center justify-center gap-1.5 rounded-lg border border-rift-cyan/30 bg-rift-cyan/5 py-2 text-sm font-medium text-rift-cyan transition-colors hover:bg-rift-cyan/10">
+            <UserSquare size={15} /> View full career profile
+          </Link>
 
           <div className="grid grid-cols-3 gap-2 text-center">
             <Meta label="Value" value={formatMoney(player.value)} />

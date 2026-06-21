@@ -216,7 +216,7 @@ export default function CareerHubPage({ params }: { params: { leagueId: string }
             <div>
               <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Top free agents</div>
               {market.topFreeAgents.length ? <div className="space-y-1">{market.topFreeAgents.map((p) => (
-                <Link key={p.id} href={href('/market')} className="flex items-center gap-2 rounded-md p-1 hover:bg-bg-elevated">
+                <Link key={p.id} href={href(`/players/${p.id}`)} className="flex items-center gap-2 rounded-md p-1 hover:bg-bg-elevated">
                   <PlayerAvatar name={p.nickname} src={p.image_url} size="sm" />
                   <span className="flex-1 truncate text-sm text-slate-200">{p.nickname}</span>
                   <RoleBadge role={p.role} />

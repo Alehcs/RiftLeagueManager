@@ -55,8 +55,8 @@ export function TournamentView({ summary, leagueId }: { summary: TournamentSumma
             </div>
             {recap && <p className="text-sm leading-relaxed text-slate-300">{recap}</p>}
             <div className="grid gap-2 sm:grid-cols-3">
-              {mvp && <Highlight icon={<Star size={14} className="text-rift-gold" />} label="Tournament MVP" value={mvp.player.nickname} sub={mvp.player.role} player={mvp.player} />}
-              {bestPerformer && <Highlight icon={<Zap size={14} className="text-rift-cyan" />} label="Best performer" value={bestPerformer.player.nickname} sub={bestPerformer.player.role} player={bestPerformer.player} />}
+              {mvp && <Highlight icon={<Star size={14} className="text-rift-gold" />} label="Tournament MVP" value={mvp.player.nickname} sub={mvp.player.role} player={mvp.player} href={`/leagues/${leagueId}/players/${mvp.player.id}`} />}
+              {bestPerformer && <Highlight icon={<Zap size={14} className="text-rift-cyan" />} label="Best performer" value={bestPerformer.player.nickname} sub={bestPerformer.player.role} player={bestPerformer.player} href={`/leagues/${leagueId}/players/${bestPerformer.player.id}`} />}
               {strongestRegion && <Highlight icon={<Globe2 size={14} className="text-rift-purple" />} label="Strongest region" value={strongestRegion} />}
             </div>
           </CardBody>
@@ -136,9 +136,9 @@ export function TournamentView({ summary, leagueId }: { summary: TournamentSumma
   );
 }
 
-function Highlight({ icon, label, value, sub, player }: { icon: React.ReactNode; label: string; value: string; sub?: string; player?: { nickname: string; image_url: string | null; role: import('@/lib/types').Role; rating_overall: number } }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-card/60 px-2.5 py-2">
+function Highlight({ icon, label, value, sub, player, href }: { icon: React.ReactNode; label: string; value: string; sub?: string; href?: string; player?: { nickname: string; image_url: string | null; role: import('@/lib/types').Role; rating_overall: number } }) {
+  const inner = (
+    <>
       {player ? <PlayerAvatar name={player.nickname} src={player.image_url} size="sm" /> : <div className="flex h-7 w-7 items-center justify-center">{icon}</div>}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-500">{icon} {label}</div>
@@ -148,6 +148,8 @@ function Highlight({ icon, label, value, sub, player }: { icon: React.ReactNode;
         </div>
       </div>
       {player && <OverallBadge value={player.rating_overall} size="sm" />}
-    </div>
+    </>
   );
+  const className = 'flex items-center gap-2 rounded-lg border border-border bg-bg-card/60 px-2.5 py-2';
+  return href ? <Link href={href} className={cn(className, 'transition-colors hover:border-rift-cyan/40')}>{inner}</Link> : <div className={className}>{inner}</div>;
 }

@@ -184,7 +184,7 @@ export function MatchSimulationViewer({ leagueId, matchId }: { leagueId: string;
                 <div className="mt-2 text-[10px] font-bold uppercase tracking-[.24em] text-rift-gold">Match complete</div>
                 <h2 className="mt-1 text-2xl font-black text-white">{winner ? `${winner.name} wins` : 'Result unavailable'}</h2>
                 <div className="mt-1 text-4xl font-black tabular-nums text-slate-100">{finalResult.blue_score} <span className="text-slate-600">:</span> {finalResult.red_score}</div>
-                {mvp && <p className="mt-3 text-sm text-slate-400">MVP <span className="font-semibold text-rift-cyan">{mvp.player.nickname}</span> · {mvp.stat.kills}/{mvp.stat.deaths}/{mvp.stat.assists}</p>}
+                {mvp && <p className="mt-3 text-sm text-slate-400">MVP <Link href={`/leagues/${leagueId}/players/${mvp.player.id}`} className="font-semibold text-rift-cyan hover:underline">{mvp.player.nickname}</Link> · {mvp.stat.kills}/{mvp.stat.deaths}/{mvp.stat.assists}</p>}
                 <div className="mt-4 flex justify-center gap-2">
                   <Button size="sm" variant="outline" onClick={replay}><RotateCcw size={13} /> Replay</Button>
                   <Link href={`/leagues/${league.id}/matches/${match.id}`}><Button size="sm" variant="gold"><BarChart3 size={13} /> Final result</Button></Link>

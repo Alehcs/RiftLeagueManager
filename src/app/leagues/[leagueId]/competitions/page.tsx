@@ -252,7 +252,7 @@ function SeasonRecapCard({ db, league, teams, matches }: { db: ReturnType<typeof
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 p-2.5 text-sm">
             <Star size={15} className="text-rift-gold" />
-            <div><div className="text-[10px] uppercase tracking-wide text-slate-500">Season MVP</div><div className="font-semibold text-slate-200">{mvp ? `${mvp.nickname} (${teamName(mvp.team_id)})` : 'TBD'}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wide text-slate-500">Season MVP</div><div className="font-semibold text-slate-200">{mvp ? <Link href={`/leagues/${league.id}/players/${mvp.id}`} className="hover:text-rift-cyan">{mvp.nickname} ({teamName(mvp.team_id)})</Link> : 'TBD'}</div></div>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 p-2.5 text-sm">
             <ArrowRightLeft size={15} className="text-rift-purple" />
