@@ -47,12 +47,25 @@ const ROLE_AXIS: Record<Role, Partial<PlayerRatings>> = {
 
 export function generatePlayerRatings(
   seed: string,
-  opts: { strength: number; tier: LeagueTier; role: Role; star?: boolean },
+  opts: {
+    strength: number;
+    tier: LeagueTier;
+    role: Role;
+    star?: boolean;
+    // When set (e.g. from reputation-biased init), the overall is taken as-is
+    // and per-axis ratings cluster around it instead of the tier center.
+    overrideOverall?: number;
+    // Extra consistency added on top (veterans/stars are steadier).
+    consistencyBias?: number;
+  },
 ): PlayerRatings {
   const rng = new Rng('rating:' + seed);
   const center = strengthCenter(opts.strength, opts.tier);
   const starBump = opts.star ? rng.range(6, 11) : 0;
-  const overall = clamp(Math.round(center + rng.noise(6) + starBump), 35, 99);
+  const overall =
+    opts.overrideOverall != null
+      ? clamp(Math.round(opts.overrideOverall), 35, 99)
+      : clamp(Math.round(center + rng.noise(6) + starBump), 35, 99);
 
   const axis = ROLE_AXIS[opts.role] ?? {};
   const axisVal = (k: keyof PlayerRatings, extra = 0) =>
@@ -66,7 +79,7 @@ export function generatePlayerRatings(
     rating_mechanics: axisVal('rating_mechanics'),
     // Stars are more consistent; pull consistency toward overall.
     rating_consistency: clamp(
-      Math.round(overall + rng.noise(4) + (opts.star ? 3 : 0)),
+      Math.round(overall + rng.noise(4) + (opts.star ? 3 : 0) + (opts.consistencyBias ?? 0)),
       35,
       99,
     ),

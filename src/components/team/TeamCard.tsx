@@ -8,7 +8,7 @@ import { useDb } from '@/lib/store/hooks';
 import { playersOf, coachesOf } from '@/lib/store/selectors';
 import { computeTeamStrength } from '@/services/strength';
 import { TeamLogo, PlayerAvatar } from '@/components/ui/image';
-import { Card } from '@/components/ui/primitives';
+import { Card, Badge } from '@/components/ui/primitives';
 import { RegionBadge } from '@/components/common/badges';
 import { RoleBadge } from '@/components/ui/rating';
 import { formatMoney, ratingColor } from '@/lib/utils';
@@ -29,9 +29,10 @@ export function TeamCard({ team }: { team: Team }) {
             <div className="flex items-center gap-1.5">
               <h3 className="truncate font-bold text-slate-100">{team.name}</h3>
             </div>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span className="font-mono">{team.short_name}</span>
               <RegionBadge region={team.region} />
+              {team.active === false && <Badge color="#c8a85a">Legacy</Badge>}
             </div>
           </div>
           <div className="text-right">

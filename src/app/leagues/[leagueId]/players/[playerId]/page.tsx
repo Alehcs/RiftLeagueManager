@@ -14,7 +14,7 @@ import { playerCareerStats, playerCareerHistory, playerAwards, playerLegacy, com
 import { playerCategory } from '@/services/run';
 import { PlayerAvatar, TeamLogo } from '@/components/ui/image';
 import { OverallBadge, RoleBadge, RatingBar } from '@/components/ui/rating';
-import { PlayerStatusBadge, PlayerCategoryBadge, ContractBadge, GeneratedBadge } from '@/components/common/badges';
+import { PlayerStatusBadge, PlayerCategoryBadge, ContractBadge, GeneratedBadge, InitArchetypeBadge } from '@/components/common/badges';
 import { Card, CardHeader, CardTitle, CardBody, Badge, Button, EmptyState, Stat } from '@/components/ui/primitives';
 import { flagEmoji, formatMoney, timeAgo, cn } from '@/lib/utils';
 
@@ -78,6 +78,7 @@ export default function PlayerProfilePage({ params }: { params: { leagueId: stri
               ) : <span className="text-rift-cyan">Free agent</span>}
               <PlayerCategoryBadge category={category} />
               <ContractBadge status={contract.status} years={contract.years_remaining} />
+              <InitArchetypeBadge archetype={player.init_archetype} showGenerated />
               <GeneratedBadge show={player.generated} />
             </div>
           </div>

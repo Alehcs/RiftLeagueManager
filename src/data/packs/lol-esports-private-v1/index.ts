@@ -1,5 +1,5 @@
 import type { DataPack, DataPackOrganization, DataPackPlayer, DataPackRoster, DataPackTeam } from '@/lib/dataPacks/types';
-import type { LeagueTier, Role } from '@/lib/types';
+import type { LeagueTier, ReputationMeta, Role } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Private LoL Esports Data Pack — V1 (broad catalog).
@@ -21,7 +21,7 @@ import type { LeagueTier, Role } from '@/lib/types';
 const STAR = 4.6; // marquee verified player
 const TOP1 = 4.3; // baseline tier 1 verified player
 
-type Slot = { handle: string; role: Role; star?: boolean };
+type Slot = { handle: string; role: Role; star?: boolean; rep?: ReputationMeta };
 interface Org {
   id: string;
   name: string;
@@ -31,6 +31,7 @@ interface Org {
   tier: LeagueTier;
   active?: boolean; // default true; false = historic / legacy / disbanded
   color?: string;
+  legacy_label?: string; // nostalgia tag for historic/legacy orgs
   roster?: Slot[]; // verified players only; partial/empty is fine (auto-filled)
 }
 
@@ -102,7 +103,7 @@ const ORGS: Org[] = [
   { id: 'kt', name: 'KT Rolster', short: 'KT', region: 'korea', country: 'KR', tier: 'tier1', color: '#e4002b', roster: [{ handle: 'PerfecT', role: 'TOP' }, { handle: 'Cuzz', role: 'JUNGLE' }, { handle: 'Bdd', role: 'MID' }, { handle: 'Deft', role: 'ADC', star: true }, { handle: 'BeryL', role: 'SUPPORT' }] },
   { id: 'ns', name: 'Nongshim RedForce', short: 'NS', region: 'korea', country: 'KR', tier: 'tier1' },
   { id: 'soop', name: 'SOOPers', short: 'SOP', region: 'korea', country: 'KR', tier: 'tier1' },
-  { id: 't1', name: 'T1', short: 'T1', region: 'korea', country: 'KR', tier: 'tier1', color: '#e2012d', roster: [{ handle: 'Zeus', role: 'TOP' }, { handle: 'Oner', role: 'JUNGLE' }, { handle: 'Faker', role: 'MID', star: true }, { handle: 'Gumayusi', role: 'ADC' }, { handle: 'Keria', role: 'SUPPORT', star: true }] },
+  { id: 't1', name: 'T1', short: 'T1', region: 'korea', country: 'KR', tier: 'tier1', color: '#e2012d', roster: [{ handle: 'Zeus', role: 'TOP' }, { handle: 'Oner', role: 'JUNGLE' }, { handle: 'Faker', role: 'MID', star: true, rep: { reputation: 'superstar', legacy_status: 'legend', popularity: 99, canon_rating_band: [94, 98], variance_profile: 'stable' } }, { handle: 'Gumayusi', role: 'ADC' }, { handle: 'Keria', role: 'SUPPORT', star: true }] },
   // ---- Pacific (LCP) ----
   { id: 'cfo', name: 'CTBC Flying Oyster', short: 'CFO', region: 'pacific', country: 'TW', tier: 'tier1', color: '#16a085' },
   { id: 'dcg', name: 'Deep Cross Gaming', short: 'DCG', region: 'pacific', country: 'TW', tier: 'tier1' },
@@ -162,8 +163,8 @@ const ORGS: Org[] = [
   { id: 'excel', name: 'Excel Esports', short: 'XL', region: 'emea', country: 'GB', tier: 'tier1', active: false },
   { id: 'm5', name: 'Moscow Five', short: 'M5', region: 'emea', country: 'RU', tier: 'tier1', active: false },
   // ---- Korea ----
-  { id: 'skt', name: 'SK Telecom T1', short: 'SKT', region: 'korea', country: 'KR', tier: 'tier1', active: false, color: '#e2012d' },
-  { id: 'ssg', name: 'Samsung Galaxy', short: 'SSG', region: 'korea', country: 'KR', tier: 'tier1', active: false, color: '#1428a0' },
+  { id: 'skt', name: 'SK Telecom T1', short: 'SKT', region: 'korea', country: 'KR', tier: 'tier1', active: false, color: '#e2012d', legacy_label: '3× World Champion dynasty' },
+  { id: 'ssg', name: 'Samsung Galaxy', short: 'SSG', region: 'korea', country: 'KR', tier: 'tier1', active: false, color: '#1428a0', legacy_label: 'Worlds 2017 champion' },
   { id: 'kootigers', name: 'KOO Tigers', short: 'KOO', region: 'korea', country: 'KR', tier: 'tier1', active: false },
   { id: 'longzhu', name: 'Longzhu Gaming', short: 'LZ', region: 'korea', country: 'KR', tier: 'tier1', active: false },
   { id: 'griffin', name: 'Griffin', short: 'GRF', region: 'korea', country: 'KR', tier: 'tier1', active: false },
@@ -178,7 +179,7 @@ const ORGS: Org[] = [
   { id: 'newbee', name: 'Newbee', short: 'NB', region: 'china', country: 'CN', tier: 'tier1', active: false },
   { id: 'suning', name: 'Suning', short: 'SN', region: 'china', country: 'CN', tier: 'tier1', active: false },
   // ---- Pacific ----
-  { id: 'tpa', name: 'Taipei Assassins', short: 'TPA', region: 'pacific', country: 'TW', tier: 'tier1', active: false },
+  { id: 'tpa', name: 'Taipei Assassins', short: 'TPA', region: 'pacific', country: 'TW', tier: 'tier1', active: false, legacy_label: 'Worlds 2012 champion' },
   { id: 'flashwolves', name: 'Flash Wolves', short: 'FW', region: 'pacific', country: 'TW', tier: 'tier1', active: false },
   { id: 'ahq', name: 'ahq e-Sports Club', short: 'AHQ', region: 'pacific', country: 'TW', tier: 'tier1', active: false },
   { id: 'albusnox', name: 'Albus NoX Luna', short: 'ANX', region: 'pacific', country: 'RU', tier: 'tier1', active: false },
@@ -198,7 +199,7 @@ const ORGS: Org[] = [
   { id: 'afreeca', name: 'Afreeca Freecs', short: 'AF', region: 'korea', country: 'KR', tier: 'tier1', active: false }, // → Kwangdong Freecs
   { id: 'incrediblemiracle', name: 'Incredible Miracle', short: 'IM', region: 'korea', country: 'KR', tier: 'tier1', active: false },
   // China
-  { id: 'fpx', name: 'FunPlus Phoenix', short: 'FPX', region: 'china', country: 'CN', tier: 'tier1', active: false, color: '#e4002b' }, // Worlds 2019 champions
+  { id: 'fpx', name: 'FunPlus Phoenix', short: 'FPX', region: 'china', country: 'CN', tier: 'tier1', active: false, color: '#e4002b', legacy_label: 'Worlds 2019 champion' }, // Worlds 2019 champions
   // North America
   { id: 'curse', name: 'Team Curse', short: 'CRS', region: 'na', country: 'US', tier: 'tier1', active: false },
   // South America
@@ -233,6 +234,7 @@ const teams: DataPackTeam[] = ORGS.map((o) => ({
   tier: o.tier,
   colors: o.color ? { primary: o.color } : undefined,
   active: o.active ?? true,
+  legacy_label: o.legacy_label ?? null,
 }));
 
 const players: DataPackPlayer[] = ORGS.flatMap((o) =>
@@ -244,6 +246,7 @@ const players: DataPackPlayer[] = ORGS.flatMap((o) =>
     strength: s.star ? STAR : TOP1,
     star: s.star,
     active: true,
+    reputation: s.rep,
   })),
 );
 

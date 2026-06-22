@@ -1,4 +1,4 @@
-import type { LeagueFormat, LeagueTier, PlayerCategory, Role } from '@/lib/types';
+import type { LeagueFormat, LeagueTier, PlayerCategory, ReputationMeta, Role } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Esports data packs
@@ -39,6 +39,7 @@ export interface DataPackTeam {
   logo?: string | null; // overrides the organization logo when set
   colors?: { primary?: string; secondary?: string };
   active?: boolean;
+  legacy_label?: string | null; // nostalgia tag for historic/legacy orgs
 }
 
 export interface DataPackPlayer {
@@ -53,6 +54,9 @@ export interface DataPackPlayer {
   category?: PlayerCategory;
   star?: boolean;
   active?: boolean;
+  // Optional reputation/canon-bias metadata. When present it biases the
+  // player's starting ratings toward their real-world reputation (~80/20).
+  reputation?: ReputationMeta;
 }
 
 export interface DataPackRosterSlot {

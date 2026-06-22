@@ -53,12 +53,16 @@ export function competitionToRawLeague(pack: DataPack, competition: DataPackComp
         role: slot.role ?? player.role,
         nat: player.nationality ?? region?.short_name ?? 'INTL',
         star: player.star,
+        age: player.age,
+        strength: player.strength,
+        reputation: player.reputation,
       }];
     });
     const strengths = rawRoster
       .map(({ nick }) => pack.players.find((p) => p.handle === nick)?.strength)
       .filter((s): s is number => typeof s === 'number');
     const homeRegion = pack.regions.find((r) => r.id === team.region_id);
+    const active = team.active ?? org?.active ?? true;
     const raw: RawTeam = {
       name: team.name,
       short: team.short_name,
@@ -68,6 +72,9 @@ export function competitionToRawLeague(pack: DataPack, competition: DataPackComp
       logo: team.logo ?? org?.logo ?? null,
       region: homeRegion?.name ?? region?.name,
       tier: team.tier,
+      active,
+      legacy_label: team.legacy_label ?? (active ? null : 'Legacy organization'),
+      color: team.colors?.primary ?? org?.colors?.primary ?? null,
     };
     return [raw];
   });

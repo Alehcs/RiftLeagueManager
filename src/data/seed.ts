@@ -28,8 +28,12 @@ import {
   generatePlayerRatings,
   playerSalary,
   playerValue,
+  strengthCenter,
   teamBudget,
 } from '@/services/ratings';
+import { resolveReputationInit } from '@/services/reputation';
+import { playerCategory } from '@/services/run';
+import { clamp } from '@/lib/utils';
 import { computeTeamStrength } from '@/services/strength';
 import { simulateMatch } from '@/services/simulation';
 import { generateSchedule } from '@/services/schedule';
@@ -84,14 +88,37 @@ function buildPlayer(args: {
   const real_name = args.raw?.name ?? generatedRealName(rng, nat);
   const role = args.role;
   const star = args.raw?.star ?? false;
+  const age = args.raw?.age ?? (star ? rng.int(19, 28) : rng.int(17, 26));
+  // Reputation-biased initialization for players carrying any canon signal
+  // (explicit reputation metadata, a star flag, or a per-player strength from a
+  // data pack). Plain generated players keep their tier/team-based generation.
+  const repSignal = !!(args.raw && (args.raw.reputation || args.raw.star || args.raw.strength != null));
+  const init = repSignal
+    ? resolveReputationInit({
+        seed: `${args.leagueId}:${nick}:${role}`,
+        meta: args.raw?.reputation,
+        star,
+        strength: args.raw?.strength ?? args.strength,
+        age,
+        fallbackCenter: strengthCenter(args.strength, args.tier),
+        hasReputation: true,
+      })
+    : null;
   const ratings = generatePlayerRatings(`${args.leagueId}:${nick}:${role}`, {
     strength: args.strength,
     tier: args.tier,
     role,
     star,
+    overrideOverall: init?.overall,
+    consistencyBias: init?.consistencyBias,
   });
-  const age = star ? rng.int(19, 28) : rng.int(17, 26);
-  const value = playerValue(ratings.rating_overall, role, age);
+  const overall = ratings.rating_overall;
+  const potential = init
+    ? init.potential
+    : clamp(overall + rng.int(age <= 20 ? 4 : 0, age <= 20 ? 12 : 6), overall, 99);
+  const category = init ? init.category : playerCategory(overall);
+  const initArchetype = init ? init.archetype : 'generated';
+  const value = playerValue(overall, role, age);
   const ts = nowISO();
   const synthetic = args.synthetic || !args.raw;
   return {
@@ -112,6 +139,11 @@ function buildPlayer(args: {
     salary: playerSalary(value, rng),
     contract_until: contractDate(rng),
     ...ratings,
+    category,
+    potential,
+    init_archetype: initArchetype,
+    reputation_tier: init?.reputationTier,
+    popularity: init?.popularity ?? undefined,
     status: args.status,
     generated: synthetic || !hasRealName,
     created_at: ts,
@@ -341,6 +373,9 @@ function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; is
       points: 0,
       form: '',
       generated: false,
+      active: rt.active ?? true,
+      legacy_label: rt.legacy_label ?? null,
+      color_primary: rt.color ?? null,
       created_at: ts,
       updated_at: ts,
     };

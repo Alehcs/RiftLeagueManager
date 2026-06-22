@@ -1,4 +1,4 @@
-import type { LeagueFormat, LeagueTier, Role } from '@/lib/types';
+import type { LeagueFormat, LeagueTier, ReputationMeta, Role } from '@/lib/types';
 
 // ============================================================================
 // Real LoL esports structure — compact source tables.
@@ -19,6 +19,10 @@ export interface RawPlayer {
   role: Role;
   nat: string;
   star?: boolean;
+  age?: number;
+  strength?: number; // 1..5 per-player center from a data pack, if known
+  // Optional reputation/canon-bias metadata; drives career initialization.
+  reputation?: ReputationMeta;
 }
 export interface RawCoach {
   nick: string;
@@ -35,6 +39,9 @@ export interface RawTeam {
   logo?: string | null; // optional pack asset path or external URL
   region?: string; // optional real home region; falls back to the league region
   tier?: LeagueTier; // optional real tier; falls back to the league tier
+  active?: boolean; // false = historic / legacy / disbanded org
+  legacy_label?: string | null; // nostalgia tag (e.g. "Worlds 2016 champion")
+  color?: string | null; // primary brand color
 }
 export interface RawLeague {
   name: string;

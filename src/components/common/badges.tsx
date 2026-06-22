@@ -2,9 +2,10 @@
 
 import { Badge } from '@/components/ui/primitives';
 import { FORMAT_META, REGION_META, TIER_META, regionBadge } from '@/lib/constants';
-import type { LeagueFormat, LeagueRunPhase, LeagueTier, MatchStatus, PlayerCategory, PlayerStatus } from '@/lib/types';
+import type { InitArchetype, LeagueFormat, LeagueRunPhase, LeagueTier, MatchStatus, PlayerCategory, PlayerStatus } from '@/lib/types';
 import { Sparkles } from 'lucide-react';
 import { RUN_PHASE_LABELS } from '@/services/run';
+import { archetypeColor, archetypeHint, archetypeLabel } from '@/services/reputation';
 import { CONTRACT_STATUS_META, type ContractStatus } from '@/services/contracts';
 
 export function TierBadge({ tier }: { tier: LeagueTier }) {
@@ -62,6 +63,30 @@ export function PlayerCategoryBadge({ category }: { category: PlayerCategory }) 
     Star: '#8b5cf6', Superstar: '#c8a85a', Legend: '#ef4444',
   };
   return <Badge color={colors[category]}>{category}</Badge>;
+}
+
+// Subtle label describing how a player's career was initialized. Hidden for
+// plain generated profiles unless `showGenerated` is set.
+export function InitArchetypeBadge({ archetype, showGenerated }: { archetype?: InitArchetype | null; showGenerated?: boolean }) {
+  if (!archetype) return null;
+  if (archetype === 'generated' && !showGenerated) return null;
+  return (
+    <span
+      title={archetypeHint(archetype)}
+      className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]"
+      style={{ borderColor: `${archetypeColor(archetype)}55`, color: archetypeColor(archetype) }}
+    >
+      {archetypeLabel(archetype)}
+    </span>
+  );
+}
+
+// Active vs historic / legacy organization status (from data-pack identity).
+export function TeamStatusBadge({ active, legacyLabel }: { active?: boolean; legacyLabel?: string | null }) {
+  if (active === false) {
+    return <Badge color="#c8a85a">{legacyLabel ? legacyLabel : 'Legacy'}</Badge>;
+  }
+  return <Badge color="#22c55e">Active</Badge>;
 }
 
 // Marks plausibly-generated data so it is clearly distinguishable from real.

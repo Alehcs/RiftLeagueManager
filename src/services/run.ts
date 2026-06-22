@@ -174,6 +174,7 @@ function makePlayer(
     rating_overall: overall,
     category,
     potential,
+    init_archetype: 'generated',
     hidden_until_reveal: !!team,
     performance_form: 50,
     morale: 50,

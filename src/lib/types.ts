@@ -74,6 +74,40 @@ export type LeagueRunPhase =
   | 'completed';
 
 export type PlayerCategory = 'Rookie' | 'Prospect' | 'Starter' | 'Pro' | 'Star' | 'Superstar' | 'Legend';
+
+// ---------------------------------------------------------------------------
+// Player reputation / canon-bias metadata (optional, additive — no migration).
+// Drives how known players start their careers. Absent for purely generated
+// players, who keep their generated defaults.
+// ---------------------------------------------------------------------------
+export type ReputationTier =
+  | 'superstar' // marquee, world-famous
+  | 'star' // elite regional star
+  | 'veteran' // experienced, consistent, possible age decline
+  | 'pro' // solid established starter
+  | 'prospect' // young, high-upside
+  | 'rookie' // unproven, high variance
+  | 'unknown'; // no reputation signal
+
+export type LegacyStatus = 'legend' | 'hall_of_fame' | 'fan_favorite' | 'none';
+export type VarianceProfile = 'stable' | 'volatile' | 'boom_or_bust';
+
+// How a known player's career was actually initialized (shown subtly in the UI).
+export type InitArchetype =
+  | 'realistic' // started near their canon band
+  | 'high_variance' // young high-upside / volatile profile
+  | 'alternate' // alternate-timeline roll (~20%)
+  | 'legacy' // historic legend / nostalgia strength
+  | 'generated'; // no reputation metadata — generated defaults
+
+export interface ReputationMeta {
+  reputation?: ReputationTier;
+  canon_rating_band?: [number, number];
+  canon_potential_band?: [number, number];
+  popularity?: number; // 0..100
+  legacy_status?: LegacyStatus;
+  variance_profile?: VarianceProfile;
+}
 export type MarketOfferStatus = 'active' | 'accepted' | 'rejected' | 'expired' | 'cancelled';
 export type RolePromise = 'starter' | 'rotation' | 'development';
 export type SimulationStatus = 'pending' | 'running' | 'completed';
@@ -184,6 +218,11 @@ export interface Team {
   points: number;
   form: string; // e.g. "WWLWL" most-recent-first
   generated?: boolean; // true when values were plausibly synthesized
+  // Organization identity (optional, additive — from data packs). `active`
+  // false = historic / legacy / disbanded org; `legacy_label` is a nostalgia tag.
+  active?: boolean;
+  legacy_label?: string | null;
+  color_primary?: string | null;
   is_bot?: boolean;
   bot_manager_name?: string | null;
   run_active?: boolean;
@@ -220,6 +259,11 @@ export interface Player {
   rating_consistency: number;
   category?: PlayerCategory;
   potential?: number;
+  // Reputation-biased initialization (optional, additive). `init_archetype`
+  // labels how a known player started; absent/`generated` for plain players.
+  init_archetype?: InitArchetype;
+  reputation_tier?: ReputationTier;
+  popularity?: number;
   hidden_until_reveal?: boolean;
   performance_form?: number;
   morale?: number;
