@@ -94,10 +94,6 @@ export function teamIdentity(team: Team): TeamIdentity {
 
 export function teamHistory(db: Database, league: League, team: Team): TeamHistory {
   const trophies: TeamTrophy[] = [];
-  let worldsTitles = 0;
-  let msiTitles = 0;
-  let regionalTitles = 0;
-  let finalsAppearances = 0;
   let playoffAppearances = 0;
 
   // --- Current-season trophies & playoff participation ---------------------
@@ -110,20 +106,17 @@ export function teamHistory(db: Database, league: League, team: Team): TeamHisto
     const kind = KEY_KIND[def.key] ?? 'regional';
     if (s.champion?.id === team.id) {
       trophies.push({ id: `cur-champ-${def.key}`, label: `${def.name} Champion`, kind, color: TROPHY_COLOR[kind], season: league.season });
-      if (kind === 'worlds') worldsTitles += 1;
-      else if (kind === 'msi') msiTitles += 1;
-      else regionalTitles += 1;
-      finalsAppearances += 1;
     } else if (s.runnerUp?.id === team.id) {
       trophies.push({ id: `cur-fin-${def.key}`, label: `${def.name} Finalist`, kind: 'finalist', color: TROPHY_COLOR.finalist, season: league.season });
-      finalsAppearances += 1;
     }
   }
 
   // --- Past-season trophies from persisted recaps --------------------------
   const pastSeasons: PastSeasonRecord[] = [];
   for (const log of seasonEndLogsOf(db, league.id)) {
-    const r = (log.payload ?? {}) as {
+    // The season-end audit payload nests the recap under `recap`
+    // ({ season_key, recap, rewards, retired }); read it there.
+    const r = ((log.payload?.recap ?? log.payload) ?? {}) as {
       regional_champions?: { region: string; team_id: string }[];
       playoff_champion_team_id?: string | null;
       msi_champion_team_id?: string | null;
@@ -135,9 +128,9 @@ export function teamHistory(db: Database, league: League, team: Team): TeamHisto
     const wonMsi = r.msi_champion_team_id === team.id;
     const wonRegional =
       r.playoff_champion_team_id === team.id || (r.regional_champions ?? []).some((c) => c.team_id === team.id);
-    if (wonWorlds) { worldsTitles += 1; trophies.push({ id: `${log.id}-worlds`, label: 'Worlds Champion', kind: 'worlds', color: TROPHY_COLOR.worlds, season }); }
-    if (wonMsi) { msiTitles += 1; trophies.push({ id: `${log.id}-msi`, label: 'MSI Champion', kind: 'msi', color: TROPHY_COLOR.msi, season }); }
-    if (wonRegional) { regionalTitles += 1; trophies.push({ id: `${log.id}-reg`, label: 'Regional Champion', kind: 'regional', color: TROPHY_COLOR.regional, season }); }
+    if (wonWorlds) trophies.push({ id: `${log.id}-worlds`, label: 'Worlds Champion', kind: 'worlds', color: TROPHY_COLOR.worlds, season });
+    if (wonMsi) trophies.push({ id: `${log.id}-msi`, label: 'MSI Champion', kind: 'msi', color: TROPHY_COLOR.msi, season });
+    if (wonRegional) trophies.push({ id: `${log.id}-reg`, label: 'Regional Champion', kind: 'regional', color: TROPHY_COLOR.regional, season });
     const summary = (r.team_summaries ?? []).find((t) => t.team_id === team.id);
     if (summary || wonWorlds || wonMsi || wonRegional) {
       pastSeasons.push({
@@ -212,7 +205,8 @@ export function teamHistory(db: Database, league: League, team: Team): TeamHisto
       return { id: t.id, ts: t.created_at, message: t.amount > 0 ? `${msg} ($${(t.amount / 1000).toFixed(0)}K)` : msg };
     });
 
-  // De-dupe trophies by label+season.
+  // De-dupe trophies by label+season — the same title can be derived from both
+  // the live tournament summary and the persisted season-end recap.
   const seen = new Set<string>();
   const dedupedTrophies = trophies.filter((t) => {
     const k = `${t.label}|${t.season ?? ''}`;
@@ -220,6 +214,17 @@ export function teamHistory(db: Database, league: League, team: Team): TeamHisto
     seen.add(k);
     return true;
   });
+
+  // Counts are derived as distinct seasons per kind, so a single season's title
+  // is never double-counted across the live summary + recap sources, nor across
+  // overlapping regional labels (playoffs/finals/recap) for the same season.
+  const seasonsWon = (kind: TrophyKind) =>
+    new Set(dedupedTrophies.filter((t) => t.kind === kind).map((t) => t.season ?? '')).size;
+  const worldsTitles = seasonsWon('worlds');
+  const msiTitles = seasonsWon('msi');
+  const regionalTitles = seasonsWon('regional');
+  const finalsAppearances =
+    worldsTitles + msiTitles + regionalTitles + new Set(dedupedTrophies.filter((t) => t.kind === 'finalist').map((t) => t.season ?? '')).size;
 
   return {
     trophies: dedupedTrophies,
