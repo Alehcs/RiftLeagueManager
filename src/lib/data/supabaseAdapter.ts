@@ -347,6 +347,24 @@ export class SupabaseAdapter implements DataAdapter {
         if (payload[key] === '') payload[key] = null;
       }
     }
+    if (table === 'teams') {
+      // Additive identity metadata is used by local/mock data packs, but these
+      // fields are intentionally schema-optional in Supabase installs.
+      delete payload.active;
+      delete payload.legacy_label;
+      delete payload.color_primary;
+    }
+    if (table === 'players') {
+      // Reputation/scouting presentation metadata is derivable client-side and
+      // not present in the baseline migrations.
+      delete payload.category;
+      delete payload.potential;
+      delete payload.init_archetype;
+      delete payload.reputation_tier;
+      delete payload.popularity;
+      delete payload.hidden_until_reveal;
+      delete payload.morale;
+    }
     if (table === 'market_offers') {
       // `reason`/`from_team_id`/`contract_years` are client-only fields and have
       // no Postgres columns; drop them so inserts/updates don't 400.

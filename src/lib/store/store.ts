@@ -123,7 +123,7 @@ interface StoreState {
 
   // leagues
   createLeague: (input: Partial<League> & { name: string; format: LeagueFormat; region: string; tier: League['tier']; season: string; adminCode?: string }) => string;
-  importRawLeague: (raw: RawLeague, opts?: { presimulate?: boolean }) => string;
+  importRawLeague: (raw: RawLeague, opts?: { presimulate?: boolean; skipSchedule?: boolean; league?: Partial<League> & { adminCode?: string } }) => string;
   importLeagueBundle: (json: string) => string | null;
   cloneLeague: (leagueId: string) => string | null;
   updateLeague: (id: string, patch: Partial<League>) => void;
@@ -769,7 +769,7 @@ export const useStore = create<StoreState>((set, get) => {
         owner_guest_id: get().currentGuestId,
         room_code: roomCode,
         admin_code_hash: input.adminCode?.trim() ? `plain:${input.adminCode.trim()}` : null,
-        run_phase: 'lobby',
+        run_phase: input.run_phase ?? 'lobby',
         starting_budget: input.starting_budget ?? 5_000_000,
         preparation_weeks: input.preparation_weeks ?? 3,
         bot_teams_enabled: input.bot_teams_enabled ?? false,
@@ -801,8 +801,22 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     importRawLeague(raw, opts) {
-      const slices = buildLeagueEntities(raw, { ownerId: get().currentGuestId, presimulate: opts?.presimulate });
+      const slices = buildLeagueEntities(raw, { ownerId: get().currentGuestId, presimulate: opts?.presimulate, skipSchedule: opts?.skipSchedule });
       const id = slices.leagues[0].id;
+      const league = slices.leagues[0];
+      if (opts?.league) {
+        const { adminCode, ...leaguePatch } = opts.league;
+        let roomCode = leaguePatch.room_code?.trim().toUpperCase() || league.room_code;
+        while (
+          get().db.leagues.some((item) => item.room_code === roomCode) ||
+          slices.leagues.some((item) => item.id !== id && item.room_code === roomCode)
+        ) roomCode = createRoomCode();
+        Object.assign(league, leaguePatch, {
+          room_code: roomCode,
+          admin_code_hash: adminCode?.trim() ? `plain:${adminCode.trim()}` : league.admin_code_hash,
+          updated_at: nowISO(),
+        });
+      }
       commit(
         () => {
           const db = get().db;

@@ -315,7 +315,7 @@ function buildFreeAgents(league: League, count: number): { players: Player[]; co
   return { players, coaches };
 }
 
-function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; isSeed?: boolean }) {
+function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; isSeed?: boolean; skipSchedule?: boolean }) {
   const ownerId = opts?.ownerId ?? DEMO_USER_ID;
   const ts = nowISO();
   const league: League = {
@@ -397,11 +397,13 @@ function buildLeague(raw: RawLeague, db: Database, opts?: { ownerId?: string; is
   db.coaches.push(...fa.coaches);
 
   // Schedule + optional pre-simulation.
-  const matches = generateSchedule(league, teams, { start: new Date(REF_DATE) });
-  db.matches.push(...matches);
+  if (!opts?.skipSchedule) {
+    const matches = generateSchedule(league, teams, { start: new Date(REF_DATE) });
+    db.matches.push(...matches);
 
-  if (raw.presimulate) {
-    presimulateLeaguePortion(league, teams, db, matches);
+    if (raw.presimulate) {
+      presimulateLeaguePortion(league, teams, db, matches);
+    }
   }
 }
 
@@ -465,12 +467,12 @@ function presimulateLeaguePortion(league: League, teams: Team[], db: Database, m
 // `presimulate` can be overridden (e.g. import without playing the season).
 export function buildLeagueEntities(
   raw: RawLeague,
-  opts?: { ownerId?: string; presimulate?: boolean },
+  opts?: { ownerId?: string; presimulate?: boolean; skipSchedule?: boolean },
 ): Pick<Database, 'leagues' | 'league_admins' | 'teams' | 'players' | 'coaches' | 'matches' | 'games'> {
   const db = structuredClone(EMPTY_DB);
   const effective: RawLeague =
     opts?.presimulate === undefined ? raw : { ...raw, presimulate: opts.presimulate };
-  buildLeague(effective, db, { ownerId: opts?.ownerId, isSeed: false });
+  buildLeague(effective, db, { ownerId: opts?.ownerId, isSeed: false, skipSchedule: opts?.skipSchedule });
   return {
     leagues: db.leagues,
     league_admins: db.league_admins,
