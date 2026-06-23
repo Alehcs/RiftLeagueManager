@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Eye, Gamepad2, Globe2, Settings2, Swords, Trophy, Users2, Wallet } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Eye, FastForward, Gamepad2, Globe2, Settings2, Swords, Trophy, Users2, Wallet } from 'lucide-react';
 import { useDb, useLeague, useLeagueRole, useManagedTeamId, canAdminister } from '@/lib/store/hooks';
 import { membersOf, teamManager, teamsOf } from '@/lib/store/selectors';
 import { useStore } from '@/lib/store/store';
@@ -14,7 +14,7 @@ import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/form';
 import { RunPhaseBadge } from '@/components/common/badges';
 import { TeamSelectionPanel } from '@/components/league/TeamSelectionPanel';
 import { formatMoney } from '@/lib/utils';
-import { COMPETITION_MODE_META, competitionMode } from '@/services/competition';
+import { COMPETITION_MODE_META, competitionMode, pendingPhaseMatches } from '@/services/competition';
 
 export default function LobbyPage({ params }: { params: { leagueId: string } }) {
   const db = useDb();
@@ -23,6 +23,7 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
   const managedTeamId = useManagedTeamId(league?.id);
   const updateSetup = useStore((state) => state.updateRunSetup);
   const advance = useStore((state) => state.advanceRunPhase);
+  const simulateAndAdvance = useStore((state) => state.simulateAndAdvanceRunPhase);
   const playFriendly = useStore((state) => state.playFriendly);
   const [friendlyOpponent, setFriendlyOpponent] = useState('');
 
@@ -84,6 +85,8 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
     : phase === 'next_season_setup'
       ? 'Start next season'
       : `Advance to ${RUN_PHASE_LABELS[nextRunPhase(league)]}`;
+  // Required matches still unplayed in the current phase (null when none).
+  const pending = pendingPhaseMatches(league, db.matches.filter((match) => match.league_id === league.id));
 
   return (
     <div className="space-y-6">
@@ -107,12 +110,35 @@ export default function LobbyPage({ params }: { params: { leagueId: string } }) 
             <Link href={`/leagues/${league.id}/reveal`}><Button variant="gold"><Eye size={15} /> Open roster reveal</Button></Link>
           )}
           {isAdmin && phase !== 'completed' && (
-            <Button variant="primary" onClick={() => advance(league.id)}>
-              {nextLabel} <ChevronRight size={15} />
-            </Button>
+            pending ? (
+              <>
+                <Button variant="primary" onClick={() => simulateAndAdvance(league.id)}>
+                  <FastForward size={15} /> Simulate remaining &amp; advance
+                </Button>
+                <Button variant="outline" disabled title={`${pending.count} unplayed required match${pending.count === 1 ? '' : 'es'} remain in ${RUN_PHASE_LABELS[phase]}`}>
+                  {nextLabel} <ChevronRight size={15} />
+                </Button>
+              </>
+            ) : (
+              <Button variant="primary" onClick={() => advance(league.id)}>
+                {nextLabel} <ChevronRight size={15} />
+              </Button>
+            )
           )}
         </div>
       </div>
+
+      {isAdmin && pending && phase !== 'completed' && (
+        <div className="flex flex-col gap-2 rounded-xl border border-rift-gold/30 bg-rift-gold/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="flex items-center gap-2 text-sm text-rift-gold">
+            <AlertTriangle size={15} className="shrink-0" />
+            {pending.count} unplayed required match{pending.count === 1 ? '' : 'es'} in {RUN_PHASE_LABELS[phase]}. Simulate or complete them before advancing.
+          </p>
+          <Link href={`/leagues/${league.id}/schedule`} className="shrink-0">
+            <Button variant="outline" size="sm">Open match center <ChevronRight size={14} /></Button>
+          </Link>
+        </div>
+      )}
 
       <div className="stat-grid grid-cols-2 sm:grid-cols-4">
         <Stat label="Selected teams" value={selected.length} sub={`${teams.length} available`} />

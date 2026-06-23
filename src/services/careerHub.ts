@@ -7,7 +7,7 @@ import {
 import { runPhase, nextRunPhase, RUN_PHASES, RUN_PHASE_LABELS, isPreseason } from '@/services/run';
 import {
   competitionMode, circuitForLeague, syncSeasonCircuit, parseQualificationResults,
-  phaseCompetitionKey, circuitRegions,
+  phaseCompetitionKey, pendingPhaseMatches, circuitRegions,
 } from '@/services/competition';
 import { standingsTable } from '@/services/standings';
 import { computeTeamStrength } from '@/services/strength';
@@ -288,7 +288,8 @@ export function buildCareerHub(db: Database, leagueId: string, guestId: string):
   const activity = buildActivity(db, leagueId, teams);
 
   // --- Alerts + recommended action ---------------------------------------
-  const alerts = buildAlerts({ audience, league, phase, started, snapshot, nextMatch, market, qualification, role, mode });
+  const pending = pendingPhaseMatches(league, matches);
+  const alerts = buildAlerts({ audience, league, phase, started, snapshot, nextMatch, market, qualification, role, mode, pendingMatches: pending?.count ?? 0 });
   const recommended = [...alerts].sort((a, b) => b.priority - a.priority)[0] ?? null;
 
   return { audience, roleLabel, league, snapshot, stage, nextMatch, qualification, market, activity, alerts, recommended };
@@ -325,10 +326,11 @@ interface AlertContext {
   qualification: QualSummary;
   role: string;
   mode: ReturnType<typeof competitionMode>;
+  pendingMatches: number;
 }
 
 function buildAlerts(ctx: AlertContext): HubAlert[] {
-  const { audience, phase, started, snapshot, nextMatch, market, qualification, role } = ctx;
+  const { audience, phase, started, snapshot, nextMatch, market, qualification, role, pendingMatches } = ctx;
   const alerts: HubAlert[] = [];
   const isAdmin = role === 'owner' || role === 'admin';
   const add = (a: HubAlert) => alerts.push(a);
@@ -361,10 +363,14 @@ function buildAlerts(ctx: AlertContext): HubAlert[] {
     add({ id: 'offseason', severity: 'info', icon: 'FileSignature', priority: 70, title: 'Offseason decisions', detail: 'Renew contracts and sign free agents before next season.', href: '/market', cta: 'Open market' });
   }
 
-  // Admin can advance the phase.
+  // Admin: simulate remaining matches, or advance once the stage is complete.
   if (isAdmin && phase !== 'completed' && phase !== 'next_season_setup' && !['lobby', 'team_selection'].includes(phase)) {
-    const ready = nextMatch.match == null; // nothing left to play in this stage
-    add({ id: 'advance', severity: ready ? 'success' : 'info', icon: 'ChevronRight', priority: ready ? 78 : 40, title: `Advance the season`, detail: ready ? 'This stage looks complete — move to the next.' : 'Advance when the current stage is done.', href: '/lobby', cta: 'Open run' });
+    if (pendingMatches > 0) {
+      // Required matches remain — recommend playing them before advancing.
+      add({ id: 'simulate', severity: 'urgent', icon: 'Play', priority: 82, title: `Simulate ${pendingMatches} remaining match${pendingMatches === 1 ? '' : 'es'}`, detail: 'Play out this stage before advancing the season.', href: '/lobby', cta: 'Open run' });
+    } else {
+      add({ id: 'advance', severity: 'success', icon: 'ChevronRight', priority: 78, title: `Advance the season`, detail: 'This stage is complete — move to the next.', href: '/lobby', cta: 'Open run' });
+    }
   }
 
   // Next match.

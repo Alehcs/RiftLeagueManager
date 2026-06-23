@@ -192,6 +192,34 @@ export function phaseCompetitionKey(league: League): string | null {
   return ['regional_playoffs', 'msi', 'second_regional_phase', 'regional_finals', 'worlds'].includes(stageKey) ? stageKey : null;
 }
 
+// Playable, competitively-meaningful match stages (excludes preseason friendlies).
+const REQUIRED_MATCH_STAGES = ['regular_season', 'group_stage', 'swiss', 'playoffs', 'final'];
+
+export interface PhasePendingMatches {
+  count: number;
+  competitionKey: string;
+}
+
+// Required, still-unplayed matches for the league's CURRENT phase. Returns null
+// when the phase has no required competition (preseason, roster reveal, MSI
+// qualification, mid-season break, offseason, next-season setup, lobby/team
+// selection, completed) so advancing through those is never blocked. For league
+// and bracket phases alike, a non-completed match in the active competition —
+// including not-yet-decided bracket slots — counts as pending, so the guard
+// holds until the stage (and its final) is fully played out.
+export function pendingPhaseMatches(league: League, matches: Match[]): PhasePendingMatches | null {
+  const competitionKey = phaseCompetitionKey(league);
+  if (!competitionKey) return null;
+  const count = matches.filter(
+    (match) =>
+      match.league_id === league.id &&
+      match.competition_key === competitionKey &&
+      REQUIRED_MATCH_STAGES.includes(match.stage) &&
+      match.status !== 'completed',
+  ).length;
+  return count > 0 ? { count, competitionKey } : null;
+}
+
 export function syncSeasonCircuit(circuit: SeasonCircuit, league: League, teams: Team[], matches: Match[]): SeasonCircuit {
   const currentStage = phaseStageKey(league);
   const currentCompetition = phaseCompetitionKey(league);

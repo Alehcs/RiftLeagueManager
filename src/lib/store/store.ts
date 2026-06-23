@@ -69,11 +69,13 @@ import {
   playerCategory,
   revertMatchConsequences,
   runPhase,
+  RUN_PHASE_LABELS,
 } from '@/services/run';
 import {
   buildRegionQualificationRules,
   createSeasonCircuit,
   parseQualificationResults,
+  pendingPhaseMatches,
   phaseCompetitionKey,
   syncSeasonCircuit,
   tagCompetitionMatches,
@@ -131,7 +133,8 @@ interface StoreState {
   resetLeagueResults: (id: string) => void;
   regenerateSchedule: (id: string, format?: LeagueFormat) => void;
   updateRunSetup: (leagueId: string, patch: Partial<Pick<League, 'starting_budget' | 'preparation_weeks' | 'bot_teams_enabled' | 'bot_team_count' | 'format' | 'friendlies_affect_development' | 'market_rules' | 'free_agent_offer_window_hours'>>) => void;
-  advanceRunPhase: (leagueId: string) => void;
+  advanceRunPhase: (leagueId: string, opts?: { force?: boolean }) => void;
+  simulateAndAdvanceRunPhase: (leagueId: string) => void;
   startRun: (leagueId: string) => void;
   startNextSeason: (leagueId: string) => void;
 
@@ -1014,7 +1017,7 @@ export const useStore = create<StoreState>((set, get) => {
       }, { toast: { kind: 'success', message: 'Run setup saved' } });
     },
 
-    advanceRunPhase(leagueId) {
+    advanceRunPhase(leagueId, opts) {
       if (!requireAdmin(leagueId, 'advance the run')) return;
       const league = get().db.leagues.find((item) => item.id === leagueId);
       if (!league) return;
@@ -1025,6 +1028,19 @@ export const useStore = create<StoreState>((set, get) => {
       if (runPhase(league) === 'next_season_setup') {
         get().startNextSeason(leagueId);
         return;
+      }
+      // Safety guard: block advancing past a phase that still has required
+      // unplayed matches (regular season, playoffs, MSI, Worlds, …). Phases with
+      // no required matches return null and advance freely. The `force` escape is
+      // used only by the "simulate remaining & advance" shortcut.
+      if (!opts?.force) {
+        const pending = pendingPhaseMatches(league, get().db.matches.filter((match) => match.league_id === leagueId));
+        if (pending) {
+          reportError(new Error(
+            `Cannot advance yet. There ${pending.count === 1 ? 'is' : 'are'} ${pending.count} unplayed required match${pending.count === 1 ? '' : 'es'} in ${RUN_PHASE_LABELS[runPhase(league)]}. Simulate or complete them before advancing.`,
+          ));
+          return;
+        }
       }
       const next = nextRunPhase(league);
       commit(() => {
@@ -1078,6 +1094,25 @@ export const useStore = create<StoreState>((set, get) => {
         target.updated_at = nowISO();
         syncCircuitInDb(leagueId);
       }, { toast: { kind: 'success', message: `Run advanced to ${next.replaceAll('_', ' ')}` } });
+    },
+
+    simulateAndAdvanceRunPhase(leagueId) {
+      if (!requireAdmin(leagueId, 'advance the run')) return;
+      const league = get().db.leagues.find((item) => item.id === leagueId);
+      if (!league) return;
+      const phase = runPhase(league);
+      // Nothing pending → just advance (covers preseason/offseason/transitions).
+      const pending = pendingPhaseMatches(league, get().db.matches.filter((match) => match.league_id === leagueId));
+      if (!pending) {
+        get().advanceRunPhase(leagueId);
+        return;
+      }
+      // Simulate this phase's remaining matches (both helpers skip completed ones,
+      // so no duplicate or re-simulation), then force-advance past the guard.
+      if (['regular_season', 'second_regional_phase'].includes(phase)) get().simulateRegularSeason(leagueId);
+      else if (['playoffs', 'msi', 'regional_finals', 'worlds'].includes(phase)) get().simulatePlayoffs(leagueId);
+      get().advanceRunPhase(leagueId, { force: true });
+      get().pushToast({ kind: 'success', message: 'Simulated remaining matches and advanced' });
     },
 
     startRun(leagueId) {

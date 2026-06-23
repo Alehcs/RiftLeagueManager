@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import {
   LayoutDashboard, Globe2, Trophy, Swords, Wallet, CalendarClock, Inbox, Search,
-  AlertTriangle, ChevronRight, RefreshCw, FileSignature, Gamepad2, Clock, Eye,
+  AlertTriangle, ChevronRight, RefreshCw, FileSignature, Gamepad2, Clock, Eye, Play,
   ArrowRight, Activity, Shield, TrendingUp, Users2, Sparkles,
   type LucideIcon,
 } from 'lucide-react';
@@ -23,7 +23,7 @@ import { formatMoney, timeAgo, cn } from '@/lib/utils';
 
 const ICONS: Record<string, LucideIcon> = {
   Gamepad2, Clock, AlertTriangle, Inbox, RefreshCw, FileSignature, ChevronRight, Swords,
-  CalendarClock, Wallet, Search, Trophy, Eye,
+  CalendarClock, Wallet, Search, Trophy, Eye, Play,
 };
 
 const SEVERITY: Record<AlertSeverity, { ring: string; text: string; bg: string }> = {
