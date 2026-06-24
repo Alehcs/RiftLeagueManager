@@ -23,6 +23,10 @@ export interface RawPlayer {
   strength?: number; // 1..5 per-player center from a data pack, if known
   // Optional reputation/canon-bias metadata; drives career initialization.
   reputation?: ReputationMeta;
+  // Optional portrait/avatar metadata (all fallback-safe).
+  portrait?: string | null;
+  avatar_seed?: string | null;
+  avatar_style?: string | null;
 }
 export interface RawCoach {
   nick: string;
@@ -42,6 +46,8 @@ export interface RawTeam {
   active?: boolean; // false = historic / legacy / disbanded org
   legacy_label?: string | null; // nostalgia tag (e.g. "Worlds 2016 champion")
   color?: string | null; // primary brand color
+  color_secondary?: string | null; // secondary brand color
+  brand_gradient?: string | null; // optional CSS gradient accent
 }
 export interface RawLeague {
   name: string;

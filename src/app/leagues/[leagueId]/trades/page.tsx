@@ -62,11 +62,11 @@ export default function TradesPage({ params }: { params: { leagueId: string } })
                   <CardBody className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">
-                        {from && <TeamLogo name={from.name} shortName={from.short_name} src={from.logo_url} size="xs" />}
+                        {from && <TeamLogo name={from.name} shortName={from.short_name} src={from.logo_url} color={from.color_primary} size="xs" />}
                         <span className="font-semibold text-slate-200">{from?.short_name}</span>
                         <ArrowLeftRight size={14} className="text-rift-purple" />
                         <span className="font-semibold text-slate-200">{to?.short_name}</span>
-                        {to && <TeamLogo name={to.name} shortName={to.short_name} src={to.logo_url} size="xs" />}
+                        {to && <TeamLogo name={to.name} shortName={to.short_name} src={to.logo_url} color={to.color_primary} size="xs" />}
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge color={STATUS_COLOR[trade.status]}>{trade.status}</Badge>

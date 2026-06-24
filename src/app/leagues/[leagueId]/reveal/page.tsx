@@ -58,7 +58,7 @@ export default function RosterRevealPage({ params }: { params: { leagueId: strin
       <Card className="overflow-hidden border-rift-gold/30 bg-gradient-to-b from-rift-gold/10 to-bg-card">
         <CardBody className="py-8 text-center">
           <div className="mx-auto flex max-w-2xl flex-col items-center gap-4">
-            <div className="relative"><TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xl" className="ring-2 ring-rift-gold/50" /><Sparkles className="absolute -right-3 -top-3 text-rift-gold" size={22} /></div>
+            <div className="relative"><TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xl" className="ring-2 ring-rift-gold/50" /><Sparkles className="absolute -right-3 -top-3 text-rift-gold" size={22} /></div>
             <div><Badge color="#c8a85a">Roster reveal</Badge><h2 className="mt-2 text-3xl font-extrabold text-slate-50">{team.name}</h2><p className="mt-1 text-sm text-slate-400">Manager {managerName} · Starting budget {formatMoney(team.budget)}</p></div>
           </div>
         </CardBody>

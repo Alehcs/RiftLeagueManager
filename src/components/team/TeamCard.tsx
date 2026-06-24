@@ -20,11 +20,12 @@ export function TeamCard({ team }: { team: Team }) {
   const strength = computeTeamStrength(team, players, coaches);
   const starters = PLAYER_ROLES.map((r) => strength.starters.find((p) => p.role === r)).filter(Boolean);
 
+  const accent = team.color_primary ?? undefined;
   return (
     <Link href={`/leagues/${team.league_id}/teams/${team.id}`}>
-      <Card hover className="h-full p-4">
+      <Card hover className="relative h-full overflow-hidden p-4" style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}>
         <div className="flex items-start gap-3">
-          <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="lg" />
+          <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="lg" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <h3 className="truncate font-bold text-slate-100">{team.name}</h3>
@@ -63,7 +64,7 @@ export function TeamCard({ team }: { team: Team }) {
               (p) =>
                 p && (
                   <div key={p.id} className="flex flex-1 flex-col items-center gap-1" title={`${p.nickname} · ${p.role} · ${p.rating_overall}`}>
-                    <PlayerAvatar name={p.nickname} src={p.image_url} size="xs" />
+                    <PlayerAvatar name={p.nickname} src={p.image_url} seed={p.avatar_seed} size="xs" />
                     <RoleBadge role={p.role} />
                   </div>
                 ),

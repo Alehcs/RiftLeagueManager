@@ -26,7 +26,7 @@ export function PlayerRow({ player, teams, canEdit, showTeam = true }: { player:
         onClick={() => setOpen(true)}
         className="flex w-full items-center gap-3 rounded-lg border border-border bg-bg-card/60 px-3 py-2 text-left transition-colors hover:border-border-soft hover:bg-bg-elevated/70"
       >
-        <PlayerAvatar name={player.nickname} src={player.image_url} size="md" />
+        <PlayerAvatar name={player.nickname} src={player.image_url} seed={player.avatar_seed} size="md" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-semibold text-slate-100">{player.nickname}</span>
@@ -44,7 +44,7 @@ export function PlayerRow({ player, teams, canEdit, showTeam = true }: { player:
           <div className="hidden items-center gap-1.5 sm:flex">
             {team ? (
               <>
-                <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" />
+                <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" />
                 <span className="text-xs text-slate-400">{team.short_name}</span>
               </>
             ) : (

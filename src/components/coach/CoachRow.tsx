@@ -42,7 +42,7 @@ export function CoachRow({ coach, teams, canEdit }: { coach: Coach; teams: Team[
         </div>
         {team ? (
           <div className="hidden items-center gap-1.5 sm:flex">
-            <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" />
+            <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" />
             <span className="text-xs text-slate-400">{team.short_name}</span>
           </div>
         ) : (

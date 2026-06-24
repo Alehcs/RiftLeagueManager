@@ -18,7 +18,7 @@ function BracketMatch({ match, leagueId }: { match: Match; leagueId: string }) {
   const Row = ({ team, score, won }: { team?: ReturnType<typeof teamById>; score: number; won: boolean }) => (
     <div className={cn('flex items-center gap-2 px-2 py-1.5', won && 'bg-rift-cyan/10')}>
       {team ? (
-        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" />
+        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" />
       ) : (
         <div className="h-6 w-6 rounded border border-dashed border-border" />
       )}

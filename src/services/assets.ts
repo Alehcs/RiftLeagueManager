@@ -26,9 +26,10 @@ export function candidatePlayerImageUrls(nickname: string): string[] {
 
 // Deterministic inline SVG tile (data URI) for a team — used as <img> src when
 // a logo is missing. Keeps the grid looking intentional rather than broken.
-export function fallbackLogoDataUri(name: string, shortName?: string): string {
+// An optional brand color makes the fallback feel on-brand.
+export function fallbackLogoDataUri(name: string, shortName?: string, brandColor?: string | null): string {
   const label = (shortName || initials(name, 3)).slice(0, 4);
-  const color = colorFromString(name);
+  const color = brandColor || colorFromString(name);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
     <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="${color}" stop-opacity="0.85"/>
@@ -42,9 +43,9 @@ export function fallbackLogoDataUri(name: string, shortName?: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-export function fallbackAvatarDataUri(name: string): string {
+export function fallbackAvatarDataUri(name: string, seed?: string | null): string {
   const label = initials(name, 2);
-  const color = colorFromString(name);
+  const color = colorFromString(seed ? `${name}:${seed}` : name);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
     <rect width="120" height="120" fill="#141622"/>
     <circle cx="60" cy="46" r="26" fill="${color}" fill-opacity="0.85"/>

@@ -78,7 +78,7 @@ export default function CareerHubPage({ params }: { params: { leagueId: string }
             <CardHeader><CardTitle className="flex items-center gap-1.5"><Shield size={15} className="text-rift-gold" /> My team</CardTitle><Link href={href(`/teams/${snapshot.team.id}`)} className="text-xs text-rift-cyan hover:underline">Open →</Link></CardHeader>
             <CardBody className="space-y-3">
               <div className="flex items-center gap-3">
-                <TeamLogo name={snapshot.team.name} shortName={snapshot.team.short_name} src={snapshot.team.logo_url} size="md" />
+                <TeamLogo name={snapshot.team.name} shortName={snapshot.team.short_name} src={snapshot.team.logo_url} color={snapshot.team.color_primary} size="md" />
                 <div className="min-w-0">
                   <div className="truncate font-bold text-slate-100">{snapshot.team.name}</div>
                   <div className="text-xs text-slate-500">{snapshot.region} · {snapshot.team.short_name}{snapshot.regionalPosition ? ` · #${snapshot.regionalPosition}/${snapshot.regionalCount}` : ''}</div>
@@ -143,7 +143,7 @@ export default function CareerHubPage({ params }: { params: { leagueId: string }
                   {nextMatch.difficulty && <Badge color={DIFFICULTY_COLOR[nextMatch.difficulty]}>{nextMatch.difficulty}</Badge>}
                 </div>
                 <div className="flex items-center justify-center gap-3 py-1">
-                  <TeamLogo name={nextMatch.opponent.name} shortName={nextMatch.opponent.short_name} src={nextMatch.opponent.logo_url} size="md" />
+                  <TeamLogo name={nextMatch.opponent.name} shortName={nextMatch.opponent.short_name} src={nextMatch.opponent.logo_url} color={nextMatch.opponent.color_primary} size="md" />
                   <div className="text-center">
                     <div className="text-[10px] uppercase tracking-wide text-slate-500">{snapshot ? 'vs' : 'Featured'}</div>
                     <div className="font-bold text-slate-100">{nextMatch.opponent.name}</div>
@@ -217,7 +217,7 @@ export default function CareerHubPage({ params }: { params: { leagueId: string }
               <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Top free agents</div>
               {market.topFreeAgents.length ? <div className="space-y-1">{market.topFreeAgents.map((p) => (
                 <Link key={p.id} href={href(`/players/${p.id}`)} className="flex items-center gap-2 rounded-md p-1 hover:bg-bg-elevated">
-                  <PlayerAvatar name={p.nickname} src={p.image_url} size="sm" />
+                  <PlayerAvatar name={p.nickname} src={p.image_url} seed={p.avatar_seed} size="sm" />
                   <span className="flex-1 truncate text-sm text-slate-200">{p.nickname}</span>
                   <RoleBadge role={p.role} />
                   <OverallBadge value={p.rating_overall} size="sm" />
@@ -284,7 +284,7 @@ function QualBlock({ title, color, teams, mine }: { title: string; color: string
     <div>
       <div className="mb-1 flex items-center gap-2"><Badge color={color}>{title}</Badge>{mine && <Badge color="#22c55e">You qualify</Badge>}</div>
       <div className="flex flex-wrap gap-1.5">
-        {teams.length ? teams.map((q) => <span key={q.team.id} className="flex items-center gap-1 rounded-md border border-border bg-bg-soft/40 px-1.5 py-0.5 text-xs text-slate-300"><TeamLogo name={q.team.name} shortName={q.team.short_name} src={q.team.logo_url} size="xs" /> {q.team.short_name}</span>) : <span className="text-xs text-slate-600">No teams qualified yet.</span>}
+        {teams.length ? teams.map((q) => <span key={q.team.id} className="flex items-center gap-1 rounded-md border border-border bg-bg-soft/40 px-1.5 py-0.5 text-xs text-slate-300"><TeamLogo name={q.team.name} shortName={q.team.short_name} src={q.team.logo_url} color={q.team.color_primary} size="xs" /> {q.team.short_name}</span>) : <span className="text-xs text-slate-600">No teams qualified yet.</span>}
       </div>
     </div>
   );

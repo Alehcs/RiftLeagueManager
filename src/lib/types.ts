@@ -223,6 +223,8 @@ export interface Team {
   active?: boolean;
   legacy_label?: string | null;
   color_primary?: string | null;
+  color_secondary?: string | null;
+  brand_gradient?: string | null;
   is_bot?: boolean;
   bot_manager_name?: string | null;
   run_active?: boolean;
@@ -244,6 +246,10 @@ export interface Player {
   nationality: string;
   age: number | null;
   image_url: string | null;
+  // Optional portrait/avatar metadata (client-only, fallback-safe). Missing
+  // values degrade to a deterministic generated avatar.
+  avatar_seed?: string | null;
+  avatar_style?: string | null;
   external_url: string | null;
   source_name: string | null;
   source_url: string | null;

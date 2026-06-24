@@ -80,8 +80,11 @@ export default function TeamProfilePage({ params }: { params: { leagueId: string
       </Link>
 
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xl" className="rounded-2xl" />
+      <div
+        className="flex flex-col gap-4 rounded-2xl border border-border p-4 sm:flex-row sm:items-center"
+        style={team.color_primary ? { background: `linear-gradient(100deg, ${team.color_primary}22, transparent 60%)`, borderColor: `${team.color_primary}55` } : undefined}
+      >
+        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xl" className="rounded-2xl" />
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold text-slate-50">{team.name}</h1>
@@ -212,7 +215,7 @@ export default function TeamProfilePage({ params }: { params: { leagueId: string
                 {history.recentResults.map((r) => (
                   <Link key={r.match.id} href={`/leagues/${league.id}/matches/${r.match.id}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-bg-soft/30 px-2.5 py-1.5 text-sm hover:border-rift-cyan/40">
                     <span className={cn('w-5 text-center text-xs font-bold', r.won ? 'text-rift-green' : 'text-rift-red/80')}>{r.won ? 'W' : 'L'}</span>
-                    {r.opponent && <TeamLogo name={r.opponent.name} shortName={r.opponent.short_name} src={r.opponent.logo_url} size="xs" />}
+                    {r.opponent && <TeamLogo name={r.opponent.name} shortName={r.opponent.short_name} src={r.opponent.logo_url} color={r.opponent.color_primary} size="xs" />}
                     <span className="flex-1 truncate text-slate-300">vs {r.opponent?.short_name ?? 'TBD'}</span>
                     <span className="tabular-nums font-semibold text-slate-200">{r.scoreFor}-{r.scoreAgainst}</span>
                     <span className="text-[11px] text-slate-600">{timeAgo(r.match.date_time)}</span>

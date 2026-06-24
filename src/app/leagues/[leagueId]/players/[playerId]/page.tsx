@@ -61,7 +61,7 @@ export default function PlayerProfilePage({ params }: { params: { leagueId: stri
       {/* Header */}
       <Card>
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <PlayerAvatar name={player.nickname} src={player.image_url} size="xl" />
+          <PlayerAvatar name={player.nickname} src={player.image_url} seed={player.avatar_seed} size="xl" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-2xl font-extrabold text-slate-50">{flagEmoji(player.nationality)} {player.nickname}</h2>
@@ -73,7 +73,7 @@ export default function PlayerProfilePage({ params }: { params: { leagueId: stri
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
               {team ? (
                 <Link href={`/leagues/${league.id}/teams/${team.id}`} className="flex items-center gap-1.5 text-slate-300 hover:text-rift-cyan">
-                  <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" /> {team.name}
+                  <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" /> {team.name}
                 </Link>
               ) : <span className="text-rift-cyan">Free agent</span>}
               <PlayerCategoryBadge category={category} />

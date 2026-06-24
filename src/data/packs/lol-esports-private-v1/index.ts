@@ -31,9 +31,21 @@ interface Org {
   tier: LeagueTier;
   active?: boolean; // default true; false = historic / legacy / disbanded
   color?: string;
+  color2?: string; // secondary brand color
   legacy_label?: string; // nostalgia tag for historic/legacy orgs
+  aliases?: string[]; // alternate / former names
   roster?: Slot[]; // verified players only; partial/empty is fine (auto-filled)
 }
+
+// Team ids with a bundled placeholder badge under /public/assets/teams/lol/.
+// Missing entries fall back to the generated brand tile — nothing breaks.
+const LOGO_IDS = new Set([
+  't1', 'geng', 'hle', 'dk', 'kt', 'g2', 'fnc', 'kc', 'th', 'koi',
+  'blg', 'jdg', 'tes', 'wbg', 'ig', 'c9', 'tl', 'fly', '100t',
+  'loud', 'pain', 'furia', 'losratones', 'skt', 'ssg', 'fpx', 'tpa',
+]);
+const logoFor = (id: string): string | undefined =>
+  LOGO_IDS.has(id) ? `/assets/teams/lol/${id}.svg` : undefined;
 
 const REGIONS = [
   { id: 'na', name: 'North America', short_name: 'NA' },
@@ -49,14 +61,14 @@ const REGION_COUNTRY: Record<string, string> = { na: 'US', sa: 'BR', emea: 'EU',
 const ORGS: Org[] = [
   // ======================= CURRENT TIER 1 (active) =======================
   // ---- North America (LCS / LTA North) ----
-  { id: 'c9', name: 'Cloud9', short: 'C9', region: 'na', country: 'US', tier: 'tier1', color: '#00aeef', roster: [{ handle: 'Blaber', role: 'JUNGLE' }, { handle: 'Berserker', role: 'ADC' }] },
+  { id: 'c9', name: 'Cloud9', short: 'C9', region: 'na', country: 'US', tier: 'tier1', color: '#00aeef', color2: '#0a0a0a', roster: [{ handle: 'Blaber', role: 'JUNGLE' }, { handle: 'Berserker', role: 'ADC' }] },
   { id: 'dig', name: 'Dignitas', short: 'DIG', region: 'na', country: 'US', tier: 'tier1', color: '#fae500' },
   { id: 'dsg', name: 'Disguised', short: 'DSG', region: 'na', country: 'US', tier: 'tier1' },
   { id: 'fly', name: 'FlyQuest', short: 'FLY', region: 'na', country: 'US', tier: 'tier1', color: '#1c8a3b', roster: [{ handle: 'Bwipo', role: 'TOP' }, { handle: 'Inspired', role: 'JUNGLE' }] },
   { id: 'lyon', name: 'LYON', short: 'LYON', region: 'na', country: 'US', tier: 'tier1' },
   { id: 'sen', name: 'Sentinels', short: 'SEN', region: 'na', country: 'US', tier: 'tier1', color: '#e3000b' },
   { id: 'sr', name: 'Shopify Rebellion', short: 'SR', region: 'na', country: 'US', tier: 'tier1', color: '#95bf47' },
-  { id: 'tl', name: 'Team Liquid', short: 'TL', region: 'na', country: 'US', tier: 'tier1', color: '#0b1f3a', roster: [{ handle: 'CoreJJ', role: 'SUPPORT' }, { handle: 'APA', role: 'MID' }] },
+  { id: 'tl', name: 'Team Liquid', short: 'TL', region: 'na', country: 'US', tier: 'tier1', color: '#0b1f3a', color2: '#1f6feb', roster: [{ handle: 'CoreJJ', role: 'SUPPORT', star: true, rep: { reputation: 'veteran', popularity: 80, variance_profile: 'stable' } }, { handle: 'APA', role: 'MID' }] },
   // ---- South America (CBLOL / LTA South) ----
   { id: 'fluxo', name: 'Fluxo W7M', short: 'FXW', region: 'sa', country: 'BR', tier: 'tier1', color: '#7c3aed' },
   { id: 'furia', name: 'FURIA', short: 'FUR', region: 'sa', country: 'BR', tier: 'tier1', color: '#000000' },
@@ -67,11 +79,11 @@ const ORGS: Org[] = [
   { id: 'pain', name: 'paiN Gaming', short: 'PNG', region: 'sa', country: 'BR', tier: 'tier1', color: '#e10600', roster: [{ handle: 'TitaN', role: 'ADC' }] },
   { id: 'red', name: 'RED Canids', short: 'RED', region: 'sa', country: 'BR', tier: 'tier1', color: '#d7282f' },
   // ---- EMEA (LEC) ----
-  { id: 'fnc', name: 'Fnatic', short: 'FNC', region: 'emea', country: 'GB', tier: 'tier1', color: '#ff5800', roster: [{ handle: 'Razork', role: 'JUNGLE' }, { handle: 'Humanoid', role: 'MID' }] },
-  { id: 'g2', name: 'G2 Esports', short: 'G2', region: 'emea', country: 'DE', tier: 'tier1', color: '#ee3a35', roster: [{ handle: 'BrokenBlade', role: 'TOP' }, { handle: 'Yike', role: 'JUNGLE' }, { handle: 'Caps', role: 'MID', star: true }, { handle: 'HansSama', role: 'ADC' }, { handle: 'Mikyx', role: 'SUPPORT' }] },
+  { id: 'fnc', name: 'Fnatic', short: 'FNC', region: 'emea', country: 'GB', tier: 'tier1', color: '#ff5800', color2: '#000000', roster: [{ handle: 'Razork', role: 'JUNGLE' }, { handle: 'Humanoid', role: 'MID' }] },
+  { id: 'g2', name: 'G2 Esports', short: 'G2', region: 'emea', country: 'DE', tier: 'tier1', color: '#ee3a35', color2: '#000000', aliases: ['Gamers2'], roster: [{ handle: 'BrokenBlade', role: 'TOP' }, { handle: 'Yike', role: 'JUNGLE' }, { handle: 'Caps', role: 'MID', star: true, rep: { reputation: 'superstar', popularity: 90, legacy_status: 'fan_favorite' } }, { handle: 'HansSama', role: 'ADC' }, { handle: 'Mikyx', role: 'SUPPORT' }] },
   { id: 'gx', name: 'GIANTX', short: 'GX', region: 'emea', country: 'ES', tier: 'tier1' },
   { id: 'kc', name: 'Karmine Corp', short: 'KC', region: 'emea', country: 'FR', tier: 'tier1', color: '#1f9be1' },
-  { id: 'koi', name: 'Movistar KOI', short: 'KOI', region: 'emea', country: 'ES', tier: 'tier1', color: '#19e08b' },
+  { id: 'koi', name: 'Movistar KOI', short: 'KOI', region: 'emea', country: 'ES', tier: 'tier1', color: '#19e08b', color2: '#0a0a0a', aliases: ['Rogue', 'KOI'] },
   { id: 'navi', name: 'Natus Vincere', short: 'NAVI', region: 'emea', country: 'UA', tier: 'tier1', color: '#ffe500' },
   { id: 'shifters', name: 'Shifters', short: 'SHF', region: 'emea', country: 'EU', tier: 'tier1' },
   { id: 'sk', name: 'SK Gaming', short: 'SK', region: 'emea', country: 'DE', tier: 'tier1' },
@@ -79,37 +91,37 @@ const ORGS: Org[] = [
   { id: 'vit', name: 'Team Vitality', short: 'VIT', region: 'emea', country: 'FR', tier: 'tier1', color: '#f8d800' },
   // ---- China (LPL) ----
   { id: 'al', name: "Anyone's Legend", short: 'AL', region: 'china', country: 'CN', tier: 'tier1' },
-  { id: 'blg', name: 'Bilibili Gaming', short: 'BLG', region: 'china', country: 'CN', tier: 'tier1', color: '#22a0e6', roster: [{ handle: 'Bin', role: 'TOP', star: true }, { handle: 'Xun', role: 'JUNGLE' }, { handle: 'Elk', role: 'ADC' }] },
+  { id: 'blg', name: 'Bilibili Gaming', short: 'BLG', region: 'china', country: 'CN', tier: 'tier1', color: '#22a0e6', color2: '#ff6699', roster: [{ handle: 'Bin', role: 'TOP', star: true, rep: { reputation: 'superstar', popularity: 85 } }, { handle: 'Xun', role: 'JUNGLE' }, { handle: 'Elk', role: 'ADC' }] },
   { id: 'edg', name: 'EDward Gaming', short: 'EDG', region: 'china', country: 'CN', tier: 'tier1', color: '#000000' },
   { id: 'ig', name: 'Invictus Gaming', short: 'IG', region: 'china', country: 'CN', tier: 'tier1' },
-  { id: 'jdg', name: 'JD Gaming', short: 'JDG', region: 'china', country: 'CN', tier: 'tier1', color: '#c8102e', roster: [{ handle: '369', role: 'TOP' }, { handle: 'Kanavi', role: 'JUNGLE', star: true }] },
+  { id: 'jdg', name: 'JD Gaming', short: 'JDG', region: 'china', country: 'CN', tier: 'tier1', color: '#c8102e', roster: [{ handle: '369', role: 'TOP' }, { handle: 'Kanavi', role: 'JUNGLE', star: true, rep: { reputation: 'star', popularity: 78, variance_profile: 'stable' } }] },
   { id: 'lgd', name: 'LGD Gaming', short: 'LGD', region: 'china', country: 'CN', tier: 'tier1' },
-  { id: 'lng', name: 'LNG Esports', short: 'LNG', region: 'china', country: 'CN', tier: 'tier1', color: '#e60012', roster: [{ handle: 'Scout', role: 'MID', star: true }] },
+  { id: 'lng', name: 'LNG Esports', short: 'LNG', region: 'china', country: 'CN', tier: 'tier1', color: '#e60012', roster: [{ handle: 'Scout', role: 'MID', star: true, rep: { reputation: 'star', popularity: 76 } }] },
   { id: 'nip', name: 'Ninjas in Pyjamas', short: 'NIP', region: 'china', country: 'CN', tier: 'tier1' },
   { id: 'omg', name: 'Oh My God', short: 'OMG', region: 'china', country: 'CN', tier: 'tier1' },
   { id: 'rng', name: 'Royal Never Give Up', short: 'RNG', region: 'china', country: 'CN', tier: 'tier1', color: '#d4af37' },
   { id: 'we', name: 'Team WE', short: 'WE', region: 'china', country: 'CN', tier: 'tier1' },
   { id: 'ttg', name: 'ThunderTalk Gaming', short: 'TTG', region: 'china', country: 'CN', tier: 'tier1' },
-  { id: 'tes', name: 'Top Esports', short: 'TES', region: 'china', country: 'CN', tier: 'tier1', color: '#d7282f', roster: [{ handle: 'JackeyLove', role: 'ADC', star: true }] },
+  { id: 'tes', name: 'Top Esports', short: 'TES', region: 'china', country: 'CN', tier: 'tier1', color: '#d7282f', roster: [{ handle: 'JackeyLove', role: 'ADC', star: true, rep: { reputation: 'superstar', popularity: 88 } }] },
   { id: 'up', name: 'Ultra Prime', short: 'UP', region: 'china', country: 'CN', tier: 'tier1' },
-  { id: 'wbg', name: 'Weibo Gaming', short: 'WBG', region: 'china', country: 'CN', tier: 'tier1', color: '#d4002a', roster: [{ handle: 'TheShy', role: 'TOP', star: true }] },
+  { id: 'wbg', name: 'Weibo Gaming', short: 'WBG', region: 'china', country: 'CN', tier: 'tier1', color: '#d4002a', roster: [{ handle: 'TheShy', role: 'TOP', star: true, rep: { reputation: 'star', popularity: 84, variance_profile: 'volatile' } }] },
   // ---- Korea (LCK) ----
   { id: 'brion', name: 'BRION', short: 'BRO', region: 'korea', country: 'KR', tier: 'tier1' },
-  { id: 'dk', name: 'Dplus KIA', short: 'DK', region: 'korea', country: 'KR', tier: 'tier1', color: '#00aee6', roster: [{ handle: 'Kingen', role: 'TOP' }, { handle: 'Lucid', role: 'JUNGLE' }, { handle: 'ShowMaker', role: 'MID', star: true }, { handle: 'Aiming', role: 'ADC' }, { handle: 'Kellin', role: 'SUPPORT' }] },
+  { id: 'dk', name: 'Dplus KIA', short: 'DK', region: 'korea', country: 'KR', tier: 'tier1', color: '#00aee6', color2: '#111111', aliases: ['DAMWON Gaming', 'DWG KIA'], roster: [{ handle: 'Kingen', role: 'TOP' }, { handle: 'Lucid', role: 'JUNGLE' }, { handle: 'ShowMaker', role: 'MID', star: true, rep: { reputation: 'superstar', popularity: 87 } }, { handle: 'Aiming', role: 'ADC' }, { handle: 'Kellin', role: 'SUPPORT' }] },
   { id: 'drx', name: 'DRX', short: 'DRX', region: 'korea', country: 'KR', tier: 'tier1', color: '#3b82f6' },
   { id: 'fearx', name: 'FEARX', short: 'FX', region: 'korea', country: 'KR', tier: 'tier1' },
-  { id: 'geng', name: 'Gen.G', short: 'GEN', region: 'korea', country: 'KR', tier: 'tier1', color: '#aa8500', roster: [{ handle: 'Kiin', role: 'TOP' }, { handle: 'Canyon', role: 'JUNGLE', star: true }, { handle: 'Chovy', role: 'MID', star: true }, { handle: 'Peyz', role: 'ADC' }, { handle: 'Lehends', role: 'SUPPORT' }] },
-  { id: 'hle', name: 'Hanwha Life Esports', short: 'HLE', region: 'korea', country: 'KR', tier: 'tier1', color: '#ff7a00', roster: [{ handle: 'Doran', role: 'TOP' }, { handle: 'Peanut', role: 'JUNGLE' }, { handle: 'Zeka', role: 'MID', star: true }, { handle: 'Viper', role: 'ADC', star: true }, { handle: 'Delight', role: 'SUPPORT' }] },
-  { id: 'kt', name: 'KT Rolster', short: 'KT', region: 'korea', country: 'KR', tier: 'tier1', color: '#e4002b', roster: [{ handle: 'PerfecT', role: 'TOP' }, { handle: 'Cuzz', role: 'JUNGLE' }, { handle: 'Bdd', role: 'MID' }, { handle: 'Deft', role: 'ADC', star: true }, { handle: 'BeryL', role: 'SUPPORT' }] },
+  { id: 'geng', name: 'Gen.G', short: 'GEN', region: 'korea', country: 'KR', tier: 'tier1', color: '#aa8500', color2: '#000000', aliases: ['Samsung Galaxy', 'KSV'], roster: [{ handle: 'Kiin', role: 'TOP' }, { handle: 'Canyon', role: 'JUNGLE', star: true, rep: { reputation: 'superstar', popularity: 85, legacy_status: 'fan_favorite' } }, { handle: 'Chovy', role: 'MID', star: true, rep: { reputation: 'superstar', popularity: 89 } }, { handle: 'Peyz', role: 'ADC' }, { handle: 'Lehends', role: 'SUPPORT' }] },
+  { id: 'hle', name: 'Hanwha Life Esports', short: 'HLE', region: 'korea', country: 'KR', tier: 'tier1', color: '#ff7a00', color2: '#0a0a0a', aliases: ['ROX Tigers lineage'], roster: [{ handle: 'Doran', role: 'TOP' }, { handle: 'Peanut', role: 'JUNGLE' }, { handle: 'Zeka', role: 'MID', star: true }, { handle: 'Viper', role: 'ADC', star: true, rep: { reputation: 'star', popularity: 80 } }, { handle: 'Delight', role: 'SUPPORT' }] },
+  { id: 'kt', name: 'KT Rolster', short: 'KT', region: 'korea', country: 'KR', tier: 'tier1', color: '#e4002b', color2: '#000000', roster: [{ handle: 'PerfecT', role: 'TOP' }, { handle: 'Cuzz', role: 'JUNGLE' }, { handle: 'Bdd', role: 'MID' }, { handle: 'Deft', role: 'ADC', star: true, rep: { reputation: 'veteran', popularity: 86, legacy_status: 'fan_favorite' } }, { handle: 'BeryL', role: 'SUPPORT' }] },
   { id: 'ns', name: 'Nongshim RedForce', short: 'NS', region: 'korea', country: 'KR', tier: 'tier1' },
   { id: 'soop', name: 'SOOPers', short: 'SOP', region: 'korea', country: 'KR', tier: 'tier1' },
-  { id: 't1', name: 'T1', short: 'T1', region: 'korea', country: 'KR', tier: 'tier1', color: '#e2012d', roster: [{ handle: 'Zeus', role: 'TOP' }, { handle: 'Oner', role: 'JUNGLE' }, { handle: 'Faker', role: 'MID', star: true, rep: { reputation: 'superstar', legacy_status: 'legend', popularity: 99, canon_rating_band: [94, 98], variance_profile: 'stable' } }, { handle: 'Gumayusi', role: 'ADC' }, { handle: 'Keria', role: 'SUPPORT', star: true }] },
+  { id: 't1', name: 'T1', short: 'T1', region: 'korea', country: 'KR', tier: 'tier1', color: '#e2012d', color2: '#000000', aliases: ['SK Telecom T1', 'SKT T1'], roster: [{ handle: 'Zeus', role: 'TOP' }, { handle: 'Oner', role: 'JUNGLE' }, { handle: 'Faker', role: 'MID', star: true, rep: { reputation: 'superstar', legacy_status: 'legend', popularity: 99, canon_rating_band: [94, 98], variance_profile: 'stable' } }, { handle: 'Gumayusi', role: 'ADC' }, { handle: 'Keria', role: 'SUPPORT', star: true }] },
   // ---- Pacific (LCP) ----
   { id: 'cfo', name: 'CTBC Flying Oyster', short: 'CFO', region: 'pacific', country: 'TW', tier: 'tier1', color: '#16a085' },
   { id: 'dcg', name: 'Deep Cross Gaming', short: 'DCG', region: 'pacific', country: 'TW', tier: 'tier1' },
   { id: 'dfm', name: 'DetonatioN FocusMe', short: 'DFM', region: 'pacific', country: 'JP', tier: 'tier1', color: '#e60012' },
   { id: 'sbh', name: 'SoftBank HAWKS gaming', short: 'SHG', region: 'pacific', country: 'JP', tier: 'tier1' },
-  { id: 'gam', name: 'GAM Esports', short: 'GAM', region: 'pacific', country: 'VN', tier: 'tier1', color: '#b30000', roster: [{ handle: 'Levi', role: 'JUNGLE', star: true }] },
+  { id: 'gam', name: 'GAM Esports', short: 'GAM', region: 'pacific', country: 'VN', tier: 'tier1', color: '#b30000', roster: [{ handle: 'Levi', role: 'JUNGLE', star: true, rep: { reputation: 'veteran', popularity: 72, legacy_status: 'fan_favorite' } }] },
   { id: 'gzg', name: 'Ground Zero Gaming', short: 'GZG', region: 'pacific', country: 'AU', tier: 'tier1' },
   { id: 'mvk', name: 'MVK Esports', short: 'MVK', region: 'pacific', country: 'VN', tier: 'tier1' },
   { id: 'secret', name: 'Secret Whales', short: 'SW', region: 'pacific', country: 'VN', tier: 'tier1' },
@@ -216,12 +228,17 @@ const ORGS: Org[] = [
 const slug = (o: Org) => o.id.trim();
 const pid = (orgId: string, handle: string) => `p-${orgId.trim()}-${handle.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
+const colorsOf = (o: Org) => (o.color || o.color2 ? { primary: o.color, secondary: o.color2 } : undefined);
+const ASSET_CREDIT = 'Placeholder badge (brand color + initials). Replace with licensed artwork.';
+
 const organizations: DataPackOrganization[] = ORGS.map((o) => ({
   id: `org-${slug(o)}`,
   name: o.name,
   short_name: o.short,
   region_id: o.region,
-  colors: o.color ? { primary: o.color } : undefined,
+  logo: logoFor(o.id),
+  colors: colorsOf(o),
+  aliases: o.aliases,
   active: o.active ?? true,
 }));
 
@@ -232,7 +249,11 @@ const teams: DataPackTeam[] = ORGS.map((o) => ({
   short_name: o.short,
   region_id: o.region,
   tier: o.tier,
-  colors: o.color ? { primary: o.color } : undefined,
+  logo: logoFor(o.id),
+  colors: colorsOf(o),
+  aliases: o.aliases,
+  asset_credit: logoFor(o.id) ? ASSET_CREDIT : undefined,
+  asset_source_label: logoFor(o.id) ? 'Bundled placeholder' : undefined,
   active: o.active ?? true,
   legacy_label: o.legacy_label ?? null,
 }));

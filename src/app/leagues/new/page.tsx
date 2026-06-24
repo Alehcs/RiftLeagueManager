@@ -355,6 +355,9 @@ function rawTeamsFromPack(pack: DataPack, teamIds: string[], opts: { fantasyRegi
         age: player.age,
         strength: player.strength,
         reputation: player.reputation as ReputationMeta | undefined,
+        portrait: player.portrait_url ?? player.portrait_asset ?? null,
+        avatar_seed: player.avatar_seed ?? null,
+        avatar_style: player.avatar_style ?? null,
       }];
     });
     const homeRegion = regionName(pack, team.region_id);
@@ -373,6 +376,8 @@ function rawTeamsFromPack(pack: DataPack, teamIds: string[], opts: { fantasyRegi
         active: team.active ?? org?.active ?? true,
         legacy_label: team.legacy_label ?? (team.active === false ? 'Legacy organization' : null),
         color: team.colors?.primary ?? org?.colors?.primary ?? null,
+        color_secondary: team.colors?.secondary ?? org?.colors?.secondary ?? null,
+        brand_gradient: team.brand_gradient ?? org?.brand_gradient ?? null,
       },
     }];
   });

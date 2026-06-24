@@ -16,7 +16,7 @@ function Side({ teamId, score, winner, align }: { teamId: string; score: number;
   return (
     <div className={cn('flex min-w-0 flex-1 items-center gap-2', align === 'right' && 'flex-row-reverse text-right')}>
       {team ? (
-        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="sm" />
+        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="sm" />
       ) : (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-[9px] text-slate-600">TBD</div>
       )}

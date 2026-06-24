@@ -90,7 +90,7 @@ export default function LeagueOverview({ params }: { params: { leagueId: string 
                   className="flex items-center gap-3 rounded-lg p-1.5 hover:bg-bg-elevated"
                 >
                   <span className="w-4 text-center text-xs font-bold text-slate-600">{i + 1}</span>
-                  <PlayerAvatar name={p.nickname} src={p.image_url} size="sm" />
+                  <PlayerAvatar name={p.nickname} src={p.image_url} seed={p.avatar_seed} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-sm font-semibold text-slate-100">{p.nickname}</span>

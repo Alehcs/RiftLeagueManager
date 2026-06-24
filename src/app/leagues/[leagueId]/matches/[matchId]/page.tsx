@@ -217,7 +217,7 @@ function TeamColumn({ teamId, leagueId, win, side }: { teamId: string; leagueId:
   if (!team) return <div className="text-center text-slate-600">TBD</div>;
   return (
     <Link href={`/leagues/${leagueId}/teams/${team.id}`} className="flex flex-col items-center gap-2 text-center group">
-      <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xl" className={cn(win && 'ring-2 ring-rift-cyan')} />
+      <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xl" className={cn(win && 'ring-2 ring-rift-cyan')} />
       <div>
         <div className={cn('font-bold group-hover:text-rift-cyan', win ? 'text-slate-50' : 'text-slate-300')}>{team.name}</div>
         <div className="text-[11px] uppercase tracking-wide" style={{ color: side === 'blue' ? '#3b82f6' : '#ef4444' }}>

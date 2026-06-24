@@ -19,25 +19,34 @@ export interface DataPackRegion {
   tier?: LeagueTier;
 }
 
-export interface DataPackOrganization {
+// Optional brand/asset metadata shared by organizations and teams. Every field
+// is optional and fallback-safe — missing assets degrade to generated tiles.
+export interface BrandAssets {
+  logo?: string | null; // public asset path ("/assets/teams/lol/x.svg") or remote URL
+  logo_light?: string | null; // variant for light surfaces
+  logo_dark?: string | null; // variant for dark surfaces
+  colors?: { primary?: string; secondary?: string };
+  brand_gradient?: string | null; // CSS gradient string for subtle accents
+  asset_credit?: string | null; // attribution text if an asset is bundled
+  asset_source_label?: string | null; // human label for the asset source
+  aliases?: string[]; // alternate names / past identities
+}
+
+export interface DataPackOrganization extends BrandAssets {
   id: string;
   name: string;
   short_name: string;
   region_id: string;
-  logo?: string | null; // public asset path ("/assets/packs/<id>/x.svg") or external URL
-  colors?: { primary?: string; secondary?: string };
   active?: boolean;
 }
 
-export interface DataPackTeam {
+export interface DataPackTeam extends BrandAssets {
   id: string;
   organization_id: string;
   name: string;
   short_name: string;
   region_id: string;
   tier: LeagueTier;
-  logo?: string | null; // overrides the organization logo when set
-  colors?: { primary?: string; secondary?: string };
   active?: boolean;
   legacy_label?: string | null; // nostalgia tag for historic/legacy orgs
 }
@@ -57,6 +66,12 @@ export interface DataPackPlayer {
   // Optional reputation/canon-bias metadata. When present it biases the
   // player's starting ratings toward their real-world reputation (~80/20).
   reputation?: ReputationMeta;
+  // Optional portrait/avatar metadata. All optional & fallback-safe: missing
+  // portraits degrade to a deterministic generated avatar.
+  portrait_url?: string | null;
+  portrait_asset?: string | null;
+  avatar_seed?: string | null; // stable seed for the generated avatar
+  avatar_style?: string | null; // generated-avatar style hint
 }
 
 export interface DataPackRosterSlot {

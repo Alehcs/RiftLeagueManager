@@ -101,7 +101,7 @@ export default function CompetitionsPage({ params }: { params: { leagueId: strin
             <CardBody className="space-y-4">
               <div>
                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><Users2 size={13} /> Participating teams</div>
-                <div className="flex flex-wrap gap-2">{activeTeams.map((team) => <div key={team.id} className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 px-2 py-1.5 text-xs text-slate-300"><TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" /> {team.short_name}</div>)}</div>
+                <div className="flex flex-wrap gap-2">{activeTeams.map((team) => <div key={team.id} className="flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 px-2 py-1.5 text-xs text-slate-300"><TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" /> {team.short_name}</div>)}</div>
               </div>
               {active.tournament_type === 'league' && activeMatches.length > 0 && <StandingsTable teams={activeTeams} matches={activeMatches} leagueId={league.id} compact limit={8} />}
             </CardBody>
@@ -163,7 +163,7 @@ function QualificationCard({ target, title, results, teams, matches }: { target:
       <CardBody className="space-y-3">
         {targetResults.map((result, index) => {
           const team = teams.find((item) => item.id === result.team_id);
-          return <div key={`${result.rule_id}-${index}`} className="flex items-center gap-3 rounded-lg border border-border p-2"><span className="w-5 text-center text-xs font-bold text-slate-600">{index + 1}</span>{team ? <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" /> : <Circle size={18} className="text-slate-700" />}<div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-200">{team?.name ?? 'Slot pending'}</div><div className="text-xs text-slate-500">{result.reason}</div></div><Badge color={result.status === 'qualified' ? '#22c55e' : '#f59e0b'}>{result.status}</Badge></div>;
+          return <div key={`${result.rule_id}-${index}`} className="flex items-center gap-3 rounded-lg border border-border p-2"><span className="w-5 text-center text-xs font-bold text-slate-600">{index + 1}</span>{team ? <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" /> : <Circle size={18} className="text-slate-700" />}<div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-200">{team?.name ?? 'Slot pending'}</div><div className="text-xs text-slate-500">{result.reason}</div></div><Badge color={result.status === 'qualified' ? '#22c55e' : '#f59e0b'}>{result.status}</Badge></div>;
         })}
         <div className="border-t border-border pt-3"><div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">Bubble teams</div><div className="text-sm text-slate-400">{bubble.length ? bubble.map((row) => row.team.short_name).join(' · ') : 'No remaining bubble teams'}</div></div>
       </CardBody>
@@ -194,7 +194,7 @@ function TournamentsRow({ db, league }: { db: ReturnType<typeof useDb>; league: 
                 <Badge color={STATUS_COLOR[s.status]}>{s.stageLabel}</Badge>
               </div>
               {s.champion ? (
-                <div className="flex items-center gap-1.5 text-xs"><TeamLogo name={s.champion.name} shortName={s.champion.short_name} src={s.champion.logo_url} size="xs" /><span className="truncate font-medium text-rift-gold">{s.champion.short_name} champion</span></div>
+                <div className="flex items-center gap-1.5 text-xs"><TeamLogo name={s.champion.name} shortName={s.champion.short_name} src={s.champion.logo_url} color={s.champion.color_primary} size="xs" /><span className="truncate font-medium text-rift-gold">{s.champion.short_name} champion</span></div>
               ) : (
                 <div className="text-xs text-slate-500">{s.participants.length ? `${s.participants.length} teams · ${s.progress.completed}/${s.progress.total || '—'}` : 'Awaiting qualifiers'}</div>
               )}

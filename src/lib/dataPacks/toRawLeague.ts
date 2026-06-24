@@ -56,6 +56,9 @@ export function competitionToRawLeague(pack: DataPack, competition: DataPackComp
         age: player.age,
         strength: player.strength,
         reputation: player.reputation,
+        portrait: player.portrait_url ?? player.portrait_asset ?? null,
+        avatar_seed: player.avatar_seed ?? null,
+        avatar_style: player.avatar_style ?? null,
       }];
     });
     const strengths = rawRoster
@@ -75,6 +78,8 @@ export function competitionToRawLeague(pack: DataPack, competition: DataPackComp
       active,
       legacy_label: team.legacy_label ?? (active ? null : 'Legacy organization'),
       color: team.colors?.primary ?? org?.colors?.primary ?? null,
+      color_secondary: team.colors?.secondary ?? org?.colors?.secondary ?? null,
+      brand_gradient: team.brand_gradient ?? org?.brand_gradient ?? null,
     };
     return [raw];
   });

@@ -65,7 +65,7 @@ export function StandingsTable({
                 </td>
                 <td className="px-3 py-2">
                   <Link href={`/leagues/${leagueId}/teams/${r.team.id}`} className="flex items-center gap-2.5 hover:text-rift-cyan">
-                    <TeamLogo name={r.team.name} shortName={r.team.short_name} src={r.team.logo_url} size="sm" />
+                    <TeamLogo name={r.team.name} shortName={r.team.short_name} src={r.team.logo_url} color={r.team.color_primary} size="sm" />
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-slate-100 group-hover:text-rift-cyan">{r.team.name}</span>
                       <span className="block text-[10px] text-slate-500">{r.team.short_name}</span>

@@ -102,7 +102,7 @@ export function PlayerDialog({
       ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-4">
-            <PlayerAvatar name={player.nickname} src={player.image_url} size="xl" />
+            <PlayerAvatar name={player.nickname} src={player.image_url} seed={player.avatar_seed} size="xl" />
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold text-slate-100">{player.nickname}</span>

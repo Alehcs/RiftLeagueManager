@@ -45,7 +45,7 @@ export function TournamentView({ summary, leagueId }: { summary: TournamentSumma
         <Card className="border-rift-gold/40 bg-gradient-to-r from-rift-gold/10 to-transparent">
           <CardBody className="space-y-3">
             <div className="flex items-center gap-4">
-              <TeamLogo name={champion.name} shortName={champion.short_name} src={champion.logo_url} size="lg" className="ring-2 ring-rift-gold" />
+              <TeamLogo name={champion.name} shortName={champion.short_name} src={champion.logo_url} color={champion.color_primary} size="lg" className="ring-2 ring-rift-gold" />
               <div className="min-w-0 flex-1">
                 <div className="text-xs uppercase tracking-wider text-rift-gold">{summary.name} Champion</div>
                 <div className="truncate text-2xl font-extrabold text-slate-50">{champion.name}</div>
@@ -90,7 +90,7 @@ export function TournamentView({ summary, leagueId }: { summary: TournamentSumma
                 return (
                   <div key={p.team.id} className={cn('flex items-center gap-2 rounded-lg border border-border bg-bg-soft/30 px-2.5 py-1.5', p.eliminated && 'opacity-50', p.team.id === champion?.id && 'border-rift-gold/50 bg-rift-gold/5')}>
                     {p.seed != null && <span className="w-6 shrink-0 text-center text-xs font-bold text-slate-500">#{p.seed}</span>}
-                    <TeamLogo name={p.team.name} shortName={p.team.short_name} src={p.team.logo_url} size="xs" />
+                    <TeamLogo name={p.team.name} shortName={p.team.short_name} src={p.team.logo_url} color={p.team.color_primary} size="xs" />
                     <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{p.team.name}</span>
                     <Badge color={rb.color}>{rb.label}</Badge>
                     {p.team.id === champion?.id && <Trophy size={13} className="text-rift-gold" />}

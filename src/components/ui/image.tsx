@@ -36,21 +36,25 @@ export function TeamLogo({
   name,
   shortName,
   src,
+  color,
   size = 'md',
+  shape = 'square',
   className,
 }: {
   name: string;
   shortName?: string;
   src?: string | null;
+  color?: string | null; // brand color used by the generated fallback tile
   size?: keyof typeof SIZES;
+  shape?: 'square' | 'circle';
   className?: string;
 }) {
   return (
     <SmartImg
       src={src}
-      fallback={fallbackLogoDataUri(name, shortName)}
-      alt={name}
-      className={cn('shrink-0 rounded-lg', SIZES[size], className)}
+      fallback={fallbackLogoDataUri(name, shortName, color)}
+      alt={`${name} logo`}
+      className={cn('shrink-0 bg-bg-soft', shape === 'circle' ? 'rounded-full' : 'rounded-lg', SIZES[size], className)}
     />
   );
 }
@@ -58,20 +62,22 @@ export function TeamLogo({
 export function PlayerAvatar({
   name,
   src,
+  seed,
   size = 'md',
   className,
 }: {
   name: string;
   src?: string | null;
+  seed?: string | null; // stable seed for the generated avatar's color variety
   size?: keyof typeof SIZES;
   className?: string;
 }) {
   return (
     <SmartImg
       src={src}
-      fallback={fallbackAvatarDataUri(name)}
-      alt={name}
-      className={cn('shrink-0 rounded-full', SIZES[size], className)}
+      fallback={fallbackAvatarDataUri(name, seed)}
+      alt={`${name} avatar`}
+      className={cn('shrink-0 rounded-full bg-bg-soft', SIZES[size], className)}
     />
   );
 }

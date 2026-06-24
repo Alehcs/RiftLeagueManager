@@ -308,7 +308,7 @@ function Scoreboard({ blue, red, blueStats, redStats, blueScore, redScore, progr
 function TeamIdentity({ team, side, score }: { team: Team; side: 'blue' | 'red'; score: number }) {
   return (
     <div className={cn('flex min-w-0 items-center gap-3', side === 'red' && 'flex-row-reverse text-right')}>
-      <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="md" className={cn('ring-2', side === 'blue' ? 'ring-rift-blue/60' : 'ring-rift-red/60')} />
+      <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="md" className={cn('ring-2', side === 'blue' ? 'ring-rift-blue/60' : 'ring-rift-red/60')} />
       <div className="min-w-0">
         <div className={cn('truncate text-sm font-black sm:text-lg', side === 'blue' ? 'text-blue-300' : 'text-red-300')}>{team.name}</div>
         <div className="text-[10px] font-bold uppercase tracking-[.16em] text-slate-600">{side} side · Series {score}</div>
@@ -343,7 +343,7 @@ function TeamRoster({ team, side, players, stats, finalStats, progress, duration
   return (
     <section className="overflow-hidden rounded-xl border border-slate-700/70 bg-[#141620] shadow-lg">
       <div className="flex items-center gap-3 border-b border-white/5 bg-white/[.025] px-3 py-2">
-        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} size="xs" />
+        <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} size="xs" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-black text-slate-100">{team.name}</div>
           <div className="text-[9px] uppercase tracking-[.15em] text-slate-600">Momentum {state?.momentum ?? 50} · Objectives {state?.objective_control ?? 50}</div>
@@ -363,7 +363,7 @@ function TeamRoster({ team, side, players, stats, finalStats, progress, duration
           const impact = Math.max(12, Math.min(100, Math.round((final.impact ?? performanceScore(final, player)) * progress)));
           return (
             <div key={player.id} className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5">
-              <PlayerAvatar name={player.nickname} src={player.image_url} size="xs" className={cn('border', side === 'blue' ? 'border-rift-blue/60' : 'border-rift-red/60')} />
+              <PlayerAvatar name={player.nickname} src={player.image_url} seed={player.avatar_seed} size="xs" className={cn('border', side === 'blue' ? 'border-rift-blue/60' : 'border-rift-red/60')} />
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span className="w-7 shrink-0 text-[9px] font-black" style={{ color: side === 'blue' ? '#47a7ff' : '#ff5d73' }}>{ROLE_LABEL[player.role] ?? player.role}</span>

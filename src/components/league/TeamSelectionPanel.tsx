@@ -113,7 +113,7 @@ export function TeamSelectionPanel({ league }: { league: League }) {
               <Card key={team.id} className={cn(ineligible && 'opacity-60', committed && 'border-border-soft')}>
                 <CardBody className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} />
+                    <TeamLogo name={team.name} shortName={team.short_name} src={team.logo_url} color={team.color_primary} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold text-slate-100">{team.name}</div>
                       <div className="flex items-center gap-1.5 text-xs text-slate-500"><span>{team.region} · {team.short_name}</span></div>

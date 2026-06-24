@@ -348,15 +348,17 @@ export class SupabaseAdapter implements DataAdapter {
       }
     }
     if (table === 'teams') {
-      // Additive identity metadata is used by local/mock data packs, but these
-      // fields are intentionally schema-optional in Supabase installs.
+      // Additive identity/brand metadata is used by local/mock data packs, but
+      // these fields are intentionally schema-optional in Supabase installs.
       delete payload.active;
       delete payload.legacy_label;
       delete payload.color_primary;
+      delete payload.color_secondary;
+      delete payload.brand_gradient;
     }
     if (table === 'players') {
-      // Reputation/scouting presentation metadata is derivable client-side and
-      // not present in the baseline migrations.
+      // Reputation/scouting/avatar presentation metadata is derivable
+      // client-side and not present in the baseline migrations.
       delete payload.category;
       delete payload.potential;
       delete payload.init_archetype;
@@ -364,6 +366,8 @@ export class SupabaseAdapter implements DataAdapter {
       delete payload.popularity;
       delete payload.hidden_until_reveal;
       delete payload.morale;
+      delete payload.avatar_seed;
+      delete payload.avatar_style;
     }
     if (table === 'market_offers') {
       // `reason`/`from_team_id`/`contract_years` are client-only fields and have
