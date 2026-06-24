@@ -1,5 +1,6 @@
 import type { DataPack, DataPackOrganization, DataPackPlayer, DataPackRoster, DataPackTeam } from '@/lib/dataPacks/types';
 import type { LeagueTier, ReputationMeta, Role } from '@/lib/types';
+import { lolLogoPath } from '@/data/lolLogoManifest';
 
 // ---------------------------------------------------------------------------
 // Private LoL Esports Data Pack — V1 (broad catalog).
@@ -37,15 +38,9 @@ interface Org {
   roster?: Slot[]; // verified players only; partial/empty is fine (auto-filled)
 }
 
-// Team ids with a bundled placeholder badge under /public/assets/teams/lol/.
-// Missing entries fall back to the generated brand tile — nothing breaks.
-const LOGO_IDS = new Set([
-  't1', 'geng', 'hle', 'dk', 'kt', 'g2', 'fnc', 'kc', 'th', 'koi',
-  'blg', 'jdg', 'tes', 'wbg', 'ig', 'c9', 'tl', 'fly', '100t',
-  'loud', 'pain', 'furia', 'losratones', 'skt', 'ssg', 'fpx', 'tpa',
-]);
-const logoFor = (id: string): string | undefined =>
-  LOGO_IDS.has(id) ? `/assets/teams/lol/${id}.svg` : undefined;
+// Logo paths come from the logo manifest (single source of truth). Teams with
+// no manifest entry fall back to the generated brand tile — nothing breaks.
+const logoFor = (id: string): string | undefined => lolLogoPath(id);
 
 const REGIONS = [
   { id: 'na', name: 'North America', short_name: 'NA' },
