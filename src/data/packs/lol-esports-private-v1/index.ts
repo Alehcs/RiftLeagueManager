@@ -73,6 +73,9 @@ const ORGS: Org[] = [
   { id: 'loud', name: 'LOUD', short: 'LLL', region: 'sa', country: 'BR', tier: 'tier1', color: '#16c60c', roster: [{ handle: 'Croc', role: 'JUNGLE' }, { handle: 'tinowns', role: 'MID' }] },
   { id: 'pain', name: 'paiN Gaming', short: 'PNG', region: 'sa', country: 'BR', tier: 'tier1', color: '#e10600', roster: [{ handle: 'TitaN', role: 'ADC' }] },
   { id: 'red', name: 'RED Canids', short: 'RED', region: 'sa', country: 'BR', tier: 'tier1', color: '#d7282f' },
+  { id: 'flamengo', name: 'Flamengo Esports', short: 'FLA', region: 'sa', country: 'BR', tier: 'tier1', color: '#c1121f', color2: '#0a0a0a' },
+  { id: 'isurus', name: 'Isurus', short: 'ISG', region: 'sa', country: 'AR', tier: 'tier1', color: '#00a3a3', aliases: ['Isurus Gaming'] },
+  { id: 'r7', name: 'Movistar R7', short: 'R7', region: 'sa', country: 'MX', tier: 'tier1', color: '#16c47f', aliases: ['Rainbow7', 'R7'] },
   // ---- EMEA (LEC) ----
   { id: 'fnc', name: 'Fnatic', short: 'FNC', region: 'emea', country: 'GB', tier: 'tier1', color: '#ff5800', color2: '#000000', roster: [{ handle: 'Razork', role: 'JUNGLE' }, { handle: 'Humanoid', role: 'MID' }] },
   { id: 'g2', name: 'G2 Esports', short: 'G2', region: 'emea', country: 'DE', tier: 'tier1', color: '#ee3a35', color2: '#000000', aliases: ['Gamers2'], roster: [{ handle: 'BrokenBlade', role: 'TOP' }, { handle: 'Yike', role: 'JUNGLE' }, { handle: 'Caps', role: 'MID', star: true, rep: { reputation: 'superstar', popularity: 90, legacy_status: 'fan_favorite' } }, { handle: 'HansSama', role: 'ADC' }, { handle: 'Mikyx', role: 'SUPPORT' }] },
@@ -84,6 +87,7 @@ const ORGS: Org[] = [
   { id: 'sk', name: 'SK Gaming', short: 'SK', region: 'emea', country: 'DE', tier: 'tier1' },
   { id: 'th', name: 'Team Heretics', short: 'TH', region: 'emea', country: 'ES', tier: 'tier1', color: '#11131a' },
   { id: 'vit', name: 'Team Vitality', short: 'VIT', region: 'emea', country: 'FR', tier: 'tier1', color: '#f8d800' },
+  { id: 'bds', name: 'Team BDS', short: 'BDS', region: 'emea', country: 'FR', tier: 'tier1', color: '#1a3a8f', aliases: ['BDS'] },
   // ---- China (LPL) ----
   { id: 'al', name: "Anyone's Legend", short: 'AL', region: 'china', country: 'CN', tier: 'tier1' },
   { id: 'blg', name: 'Bilibili Gaming', short: 'BLG', region: 'china', country: 'CN', tier: 'tier1', color: '#22a0e6', color2: '#ff6699', roster: [{ handle: 'Bin', role: 'TOP', star: true, rep: { reputation: 'superstar', popularity: 85 } }, { handle: 'Xun', role: 'JUNGLE' }, { handle: 'Elk', role: 'ADC' }] },
@@ -100,6 +104,7 @@ const ORGS: Org[] = [
   { id: 'tes', name: 'Top Esports', short: 'TES', region: 'china', country: 'CN', tier: 'tier1', color: '#d7282f', roster: [{ handle: 'JackeyLove', role: 'ADC', star: true, rep: { reputation: 'superstar', popularity: 88 } }] },
   { id: 'up', name: 'Ultra Prime', short: 'UP', region: 'china', country: 'CN', tier: 'tier1' },
   { id: 'wbg', name: 'Weibo Gaming', short: 'WBG', region: 'china', country: 'CN', tier: 'tier1', color: '#d4002a', roster: [{ handle: 'TheShy', role: 'TOP', star: true, rep: { reputation: 'star', popularity: 84, variance_profile: 'volatile' } }] },
+  { id: 'rareatom', name: 'Rare Atom', short: 'RA', region: 'china', country: 'CN', tier: 'tier1', color: '#6b3fa0', aliases: ['Rogue Warriors'] },
   // ---- Korea (LCK) ----
   { id: 'brion', name: 'BRION', short: 'BRO', region: 'korea', country: 'KR', tier: 'tier1' },
   { id: 'dk', name: 'Dplus KIA', short: 'DK', region: 'korea', country: 'KR', tier: 'tier1', color: '#00aee6', color2: '#111111', aliases: ['DAMWON Gaming', 'DWG KIA'], roster: [{ handle: 'Kingen', role: 'TOP' }, { handle: 'Lucid', role: 'JUNGLE' }, { handle: 'ShowMaker', role: 'MID', star: true, rep: { reputation: 'superstar', popularity: 87 } }, { handle: 'Aiming', role: 'ADC' }, { handle: 'Kellin', role: 'SUPPORT' }] },
@@ -120,6 +125,7 @@ const ORGS: Org[] = [
   { id: 'gzg', name: 'Ground Zero Gaming', short: 'GZG', region: 'pacific', country: 'AU', tier: 'tier1' },
   { id: 'mvk', name: 'MVK Esports', short: 'MVK', region: 'pacific', country: 'VN', tier: 'tier1' },
   { id: 'secret', name: 'Secret Whales', short: 'SW', region: 'pacific', country: 'VN', tier: 'tier1' },
+  { id: 'psg', name: 'PSG Talon', short: 'PSG', region: 'pacific', country: 'TW', tier: 'tier1', color: '#c8102e', color2: '#0a1a3f', aliases: ['Talon Esports'] },
 
   // ===================== TIER 2 / ACADEMY (active) =====================
   // ---- NACL (North America Challengers) ----
@@ -217,11 +223,39 @@ const ORGS: Org[] = [
   { id: 'bangkoktitans', name: 'Bangkok Titans', short: 'BKT', region: 'pacific', country: 'TH', tier: 'regional', active: false },
   { id: 'direwolves', name: 'Dire Wolves', short: 'DW', region: 'pacific', country: 'AU', tier: 'regional', active: false },
   { id: 'chiefs', name: 'Chiefs Esports Club', short: 'CHF', region: 'pacific', country: 'AU', tier: 'regional', active: false },
+  { id: 'saigonbuffalo', name: 'Saigon Buffalo', short: 'SGB', region: 'pacific', country: 'VN', tier: 'tier1', active: false, color: '#d4a017', legacy_label: 'Worlds 2022 quarter-finalist' },
+  // EMEA (added)
+  { id: 'astralis', name: 'Astralis', short: 'AST', region: 'emea', country: 'DK', tier: 'tier1', active: false, color: '#e63946', legacy_label: 'Acquired Origen LEC slot' },
 ];
 
 // --- de-dupe guard: slug must be unique --------------------------------------
 const slug = (o: Org) => o.id.trim();
 const pid = (orgId: string, handle: string) => `p-${orgId.trim()}-${handle.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+// Validate the catalog once at import: duplicate ids are a hard error; a short
+// code repeated within a region is only allowed when the entries are distinct
+// active/historic identities (legacy rebrands), otherwise it would create two
+// accidentally-identical selectable teams.
+(function assertNoDuplicates() {
+  const ids = new Set<string>();
+  for (const o of ORGS) {
+    if (ids.has(o.id)) throw new Error(`[lol-pack] duplicate team id: ${o.id}`);
+    ids.add(o.id);
+  }
+  const byRegionShort = new Map<string, Org[]>();
+  for (const o of ORGS) {
+    const key = `${o.region}:${o.short.toLowerCase()}`;
+    const list = byRegionShort.get(key) ?? [];
+    list.push(o);
+    byRegionShort.set(key, list);
+  }
+  for (const [key, list] of byRegionShort) {
+    if (list.length < 2) continue;
+    // Allowed only if at most one is active (the rest are legacy/historic).
+    const activeCount = list.filter((o) => o.active !== false).length;
+    if (activeCount > 1) throw new Error(`[lol-pack] duplicate active short code within region: ${key}`);
+  }
+})();
 
 const colorsOf = (o: Org) => (o.color || o.color2 ? { primary: o.color, secondary: o.color2 } : undefined);
 const ASSET_CREDIT = 'Placeholder badge (brand color + initials). Replace with licensed artwork.';

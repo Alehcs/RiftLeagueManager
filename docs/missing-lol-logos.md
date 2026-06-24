@@ -43,6 +43,18 @@ brand tile · `missing` = no asset/path · `broken` = path set but file absent.
 | Samsung Galaxy (legacy) | SSG | `ssg.svg` | placeholder | `ssg.svg` | legacy |
 | FunPlus Phoenix (legacy) | FPX | `fpx.svg` | placeholder | `fpx.svg` | legacy |
 | Taipei Assassins (legacy) | TPA | `tpa.svg` | placeholder | `tpa.svg` | legacy |
+| Team BDS | BDS | `bds.svg` | placeholder | `bds.svg` | added — EMEA |
+| Rare Atom | RA | `rareatom.svg` | placeholder | `rareatom.svg` | added — LPL; alias Rogue Warriors |
+| PSG Talon | PSG | `psg.svg` | placeholder | `psg.svg` | added — PCS; alias Talon Esports |
+| Isurus | ISG | `isurus.svg` | placeholder | `isurus.svg` | added — LLA |
+| Movistar R7 | R7 | `r7.svg` | placeholder | `r7.svg` | added — LLA; alias Rainbow7 |
+| Flamengo Esports | FLA | `flamengo.svg` | placeholder | `flamengo.svg` | added — CBLOL |
+| Astralis | AST | `astralis.svg` | placeholder | `astralis.svg` | added — EMEA legacy |
+| Saigon Buffalo | SGB | `saigonbuffalo.svg` | placeholder | `saigonbuffalo.svg` | added — VCS legacy |
+
+> No real (licensed) logo files exist in the repo yet — **every team above uses a
+> placeholder badge**. Drop real artwork in and flip the manifest `status` to
+> `real` to update this list.
 
 ## Teams with no logo path (generated brand/initials fallback)
 

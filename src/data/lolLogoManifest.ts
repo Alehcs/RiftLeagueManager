@@ -55,6 +55,15 @@ export const LOL_LOGO_MANIFEST: LolLogoEntry[] = [
   { id: 'loud', team: 'LOUD', short: 'LLL', path: `${DIR}/loud.svg`, format: 'svg', status: 'placeholder' },
   { id: 'pain', team: 'paiN Gaming', short: 'PNG', path: `${DIR}/pain.svg`, format: 'svg', status: 'placeholder' },
   { id: 'furia', team: 'FURIA', short: 'FUR', path: `${DIR}/furia.svg`, format: 'svg', status: 'placeholder' },
+  // ---- Added notable teams (LLA/LATAM, EMEA, LPL, PCS) ----
+  { id: 'flamengo', team: 'Flamengo Esports', short: 'FLA', path: `${DIR}/flamengo.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'isurus', team: 'Isurus', short: 'ISG', aliases: ['Isurus Gaming'], path: `${DIR}/isurus.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'r7', team: 'Movistar R7', short: 'R7', aliases: ['Rainbow7'], path: `${DIR}/r7.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'bds', team: 'Team BDS', short: 'BDS', path: `${DIR}/bds.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'rareatom', team: 'Rare Atom', short: 'RA', aliases: ['Rogue Warriors'], path: `${DIR}/rareatom.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'psg', team: 'PSG Talon', short: 'PSG', aliases: ['Talon Esports'], path: `${DIR}/psg.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'astralis', team: 'Astralis', short: 'AST', path: `${DIR}/astralis.svg`, format: 'svg', status: 'placeholder' },
+  { id: 'saigonbuffalo', team: 'Saigon Buffalo', short: 'SGB', path: `${DIR}/saigonbuffalo.svg`, format: 'svg', status: 'placeholder' },
   // ---- Historic / legacy ----
   { id: 'losratones', team: 'Los Ratones', short: 'LR', path: `${DIR}/losratones.svg`, format: 'svg', status: 'placeholder' },
   { id: 'skt', team: 'SK Telecom T1', short: 'SKT', aliases: ['SKT', 'SKT T1'], path: `${DIR}/skt.svg`, format: 'svg', status: 'placeholder' },

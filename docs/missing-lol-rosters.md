@@ -44,8 +44,16 @@ currently carry **no verified handles** and are fully auto-generated. This is by
 design for nostalgia/legacy cups and lesser-documented sides — add conservative
 known handles later if desired.
 
+### Newly added teams (generated-only)
+
+The teams added in this pass — Team BDS, Rare Atom, PSG Talon, Isurus,
+Movistar R7, Flamengo Esports, Astralis, Saigon Buffalo — ship with **no verified
+rosters** and are fully auto-generated. No player data was invented; add
+conservative known handles later if desired.
+
 ## Summary
 
 - **6** teams with full 5-player verified rosters.
 - **12** teams with partial verified rosters.
-- All other pack teams use generated-only rosters (auto-filled, flagged).
+- All other pack teams (including the 8 newly added) use generated-only rosters
+  (auto-filled, flagged).
