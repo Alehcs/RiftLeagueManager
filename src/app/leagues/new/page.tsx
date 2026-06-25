@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Boxes,
   Check,
+  ChevronDown,
   ClipboardList,
   Copy,
   Crown,
@@ -33,7 +34,8 @@ import { useCurrentGuestId, useDb } from '@/lib/store/hooks';
 import { useStore } from '@/lib/store/store';
 import { PageContainer } from '@/components/common/layout';
 import { Badge, Button, Card, CardBody, Divider } from '@/components/ui/primitives';
-import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/form';
+import { Field, Input, Select, SettingToggle, Textarea } from '@/components/ui/form';
+import { TeamLogo } from '@/components/ui/image';
 import { FORMAT_META, LEAGUE_FORMAT_OPTIONS, TIER_META } from '@/lib/constants';
 import type { CompetitionMode, LeagueFormat, LeagueTier, ReputationMeta } from '@/lib/types';
 import type { RawLeague, RawPlayer, RawTeam } from '@/data/rosters';
@@ -86,6 +88,8 @@ interface PoolTeam {
   active: boolean;
   legacyLabel: string | null;
   source: 'generated' | 'pack' | 'custom';
+  logo: string | null; // real/placeholder asset path; null → generated fallback tile
+  color: string | null; // brand colour for the fallback tile
 }
 
 interface CreationTeam {
@@ -284,6 +288,8 @@ function poolFromPack(pack: DataPack): PoolTeam[] {
     active: team.active !== false,
     legacyLabel: team.legacy_label ?? (team.active === false ? 'Historic / legacy' : null),
     source: 'pack',
+    logo: team.logo ?? null,
+    color: team.colors?.primary ?? null,
   }));
 }
 
@@ -307,6 +313,8 @@ function demoPool(count: number, mode: CompetitionMode, style: ExperienceStyle, 
       active: !historic,
       legacyLabel: historic ? 'Historic demo team' : null,
       source: 'generated',
+      logo: null,
+      color: null,
     };
   });
 }
@@ -509,6 +517,8 @@ export default function NewLeaguePage() {
     active: true,
     legacyLabel: null,
     source: 'custom',
+    logo: null,
+    color: null,
   }));
 
   const ownerOptions = [
@@ -903,23 +913,21 @@ export default function NewLeaguePage() {
                       <Button variant="secondary" onClick={() => { setSelectedTeamIds(defaultTeamIds); setOwnerTeamKey(''); }}><Dice5 size={14} /> Recommended pool</Button>
                       <Button variant="outline" onClick={() => { setSelectedTeamIds([]); setOwnerTeamKey(''); }}><X size={14} /> Clear</Button>
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                      {visiblePackTeams.map((team) => (
-                        <button key={team.id} type="button" onClick={() => togglePackTeam(team.id)} className="text-left">
-                          <TeamPoolRow team={team} selected={effectiveSelectedTeamIds.includes(team.id)} />
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>{effectiveSelectedTeamIds.length} selected of {visiblePackTeams.length} shown{teamSearch.trim() ? ' (filtered)' : ''}</span>
+                      <span>Grouped by league / region — tap a heading to collapse</span>
                     </div>
+                    <PackTeamBrowser teams={visiblePackTeams} selectedIds={effectiveSelectedTeamIds} onToggle={togglePackTeam} />
                   </div>
                 )}
 
                 <Divider />
                 <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
                   <div className="space-y-3">
-                    <div className="flex flex-wrap gap-4">
-                      <Toggle checked={rules.customTeamsEnabled} onChange={(customTeamsEnabled) => setRules((previous) => ({ ...previous, customTeamsEnabled }))} label="Custom teams enabled" />
-                      <Toggle checked={rules.historicTeamsEnabled} onChange={(historicTeamsEnabled) => { setRules((previous) => ({ ...previous, historicTeamsEnabled })); setSelectedTeamIds([]); }} label="Historic teams enabled" />
-                      <Toggle checked={rules.fantasyPlacementEnabled} onChange={(fantasyPlacementEnabled) => setRules((previous) => ({ ...previous, fantasyPlacementEnabled }))} label="Fantasy placement enabled" />
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <SettingToggle checked={rules.customTeamsEnabled} onChange={(customTeamsEnabled) => setRules((previous) => ({ ...previous, customTeamsEnabled }))} label="Custom teams" description="Add your own teams to the pool." />
+                      <SettingToggle checked={rules.historicTeamsEnabled} onChange={(historicTeamsEnabled) => { setRules((previous) => ({ ...previous, historicTeamsEnabled })); setSelectedTeamIds([]); }} label="Historic teams" description="Include legacy / disbanded orgs." />
+                      <SettingToggle checked={rules.fantasyPlacementEnabled} onChange={(fantasyPlacementEnabled) => setRules((previous) => ({ ...previous, fantasyPlacementEnabled }))} label="Fantasy placement" description="Move selected teams into one custom region." />
                     </div>
                     {rules.customTeamsEnabled && (
                       <div className="rounded-lg border border-border bg-bg-soft/40 p-3">
@@ -968,40 +976,49 @@ export default function NewLeaguePage() {
             )}
 
             {currentStep.id === 'rules' && (
-              <section className="space-y-4">
+              <section className="space-y-5">
                 <StepHeading icon={<Settings2 size={18} />} title="Configure Rules" detail="Set run defaults before the lobby opens." />
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Field label="Number of teams"><Input type="number" min={2} max={64} value={rules.teamCount} onChange={(event) => setRules((previous) => ({ ...previous, teamCount: Number(event.target.value) }))} /></Field>
-                  <Field label="Season format"><Select value={format} onChange={(event) => setFormat(event.target.value as LeagueFormat)}>{LEAGUE_FORMAT_OPTIONS.map((item) => <option key={item} value={item}>{FORMAT_META[item].label}</option>)}</Select></Field>
-                  <Field label="Preseason weeks"><Select value={rules.preseasonWeeks} onChange={(event) => setRules((previous) => ({ ...previous, preseasonWeeks: Number(event.target.value) }))}><option value={1}>1 week</option><option value={2}>2 weeks</option><option value={3}>3 weeks</option></Select></Field>
-                  <Field label="Starting budget"><Input type="number" min={0} step={100000} value={rules.startingBudget} onChange={(event) => setRules((previous) => ({ ...previous, startingBudget: Number(event.target.value) }))} /></Field>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Toggle checked={rules.botTeamsEnabled} onChange={(botTeamsEnabled) => setRules((previous) => ({ ...previous, botTeamsEnabled }))} label="Bot teams enabled" />
-                  <Field label="Bot fill behavior">
-                    <Select value={rules.botFillBehavior} disabled={!rules.botTeamsEnabled} onChange={(event) => setRules((previous) => ({ ...previous, botFillBehavior: event.target.value as BotFillBehavior }))}>
-                      <option value="fill_open">Fill open slots at start</option>
-                      <option value="exact">Use exact bot count</option>
-                      <option value="off">No automatic bot fill</option>
-                    </Select>
-                  </Field>
-                  <Field label="Exact bot count"><Input type="number" min={0} disabled={!rules.botTeamsEnabled || rules.botFillBehavior !== 'exact'} value={rules.botCount} onChange={(event) => setRules((previous) => ({ ...previous, botCount: Number(event.target.value) }))} /></Field>
-                </div>
-                {rules.fantasyPlacementEnabled && (
-                  <Field label="Fantasy placement region" hint="Selected teams are placed here when fantasy placement is enabled.">
-                    <Input value={rules.fantasyRegion} onChange={(event) => setRules((previous) => ({ ...previous, fantasyRegion: event.target.value }))} />
-                  </Field>
-                )}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <Toggle checked={rules.marketEnabled} onChange={(marketEnabled) => setRules((previous) => ({ ...previous, marketEnabled }))} label="Market enabled" />
-                  <Toggle checked={rules.globalTransferMarketEnabled} onChange={(globalTransferMarketEnabled) => setRules((previous) => ({ ...previous, globalTransferMarketEnabled }))} label="Global transfer market enabled" />
-                  <Toggle checked={rules.contractsEnabled} onChange={(contractsEnabled) => setRules((previous) => ({ ...previous, contractsEnabled }))} label="Contracts enabled" />
-                  <Toggle checked={rules.scoutingEnabled} onChange={(scoutingEnabled) => setRules((previous) => ({ ...previous, scoutingEnabled }))} label="Scouting enabled" />
-                  <Toggle checked={rules.careerVarianceEnabled} onChange={(careerVarianceEnabled) => setRules((previous) => ({ ...previous, careerVarianceEnabled }))} label="Career realism variance enabled" />
-                  <Toggle checked={rules.reputationBiasEnabled} onChange={(reputationBiasEnabled) => setRules((previous) => ({ ...previous, reputationBiasEnabled }))} label="Player reputation bias enabled" />
-                  <Toggle checked={rules.simplifiedFormat} onChange={(simplifiedFormat) => setRules((previous) => ({ ...previous, simplifiedFormat }))} label="Simplified season format" />
-                </div>
-                <p className="text-xs leading-relaxed text-slate-500">{FORMAT_META[format].description}</p>
+
+                <SettingsGroup title="League basics">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Field label="Number of teams"><Input type="number" min={2} max={64} value={rules.teamCount} onChange={(event) => setRules((previous) => ({ ...previous, teamCount: Number(event.target.value) }))} /></Field>
+                    <Field label="Season format"><Select value={format} onChange={(event) => setFormat(event.target.value as LeagueFormat)}>{LEAGUE_FORMAT_OPTIONS.map((item) => <option key={item} value={item}>{FORMAT_META[item].label}</option>)}</Select></Field>
+                    <Field label="Preseason weeks"><Select value={rules.preseasonWeeks} onChange={(event) => setRules((previous) => ({ ...previous, preseasonWeeks: Number(event.target.value) }))}><option value={1}>1 week</option><option value={2}>2 weeks</option><option value={3}>3 weeks</option></Select></Field>
+                    <Field label="Starting budget"><Input type="number" min={0} step={100000} value={rules.startingBudget} onChange={(event) => setRules((previous) => ({ ...previous, startingBudget: Number(event.target.value) }))} /></Field>
+                  </div>
+                  <p className="text-xs leading-relaxed text-slate-500">{FORMAT_META[format].description}</p>
+                </SettingsGroup>
+
+                <SettingsGroup title="Bots & fill">
+                  <SettingToggle checked={rules.botTeamsEnabled} onChange={(botTeamsEnabled) => setRules((previous) => ({ ...previous, botTeamsEnabled }))} label="Bot teams" description="Fill empty slots with AI-managed teams." />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Bot fill behavior">
+                      <Select value={rules.botFillBehavior} disabled={!rules.botTeamsEnabled} onChange={(event) => setRules((previous) => ({ ...previous, botFillBehavior: event.target.value as BotFillBehavior }))}>
+                        <option value="fill_open">Fill open slots at start</option>
+                        <option value="exact">Use exact bot count</option>
+                        <option value="off">No automatic bot fill</option>
+                      </Select>
+                    </Field>
+                    <Field label="Exact bot count"><Input type="number" min={0} disabled={!rules.botTeamsEnabled || rules.botFillBehavior !== 'exact'} value={rules.botCount} onChange={(event) => setRules((previous) => ({ ...previous, botCount: Number(event.target.value) }))} /></Field>
+                  </div>
+                  {rules.fantasyPlacementEnabled && (
+                    <Field label="Fantasy placement region" hint="Selected teams are placed here when fantasy placement is enabled.">
+                      <Input value={rules.fantasyRegion} onChange={(event) => setRules((previous) => ({ ...previous, fantasyRegion: event.target.value }))} />
+                    </Field>
+                  )}
+                </SettingsGroup>
+
+                <SettingsGroup title="Systems & realism">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <SettingToggle checked={rules.marketEnabled} onChange={(marketEnabled) => setRules((previous) => ({ ...previous, marketEnabled }))} label="Market enabled" description="Buy, sell, and sign players in-season." />
+                    <SettingToggle checked={rules.globalTransferMarketEnabled} onChange={(globalTransferMarketEnabled) => setRules((previous) => ({ ...previous, globalTransferMarketEnabled }))} label="Global transfer market" description="Allow transfers across all regions, not just your own." />
+                    <SettingToggle checked={rules.contractsEnabled} onChange={(contractsEnabled) => setRules((previous) => ({ ...previous, contractsEnabled }))} label="Contracts" description="Track contract length and expiry." />
+                    <SettingToggle checked={rules.scoutingEnabled} onChange={(scoutingEnabled) => setRules((previous) => ({ ...previous, scoutingEnabled }))} label="Scouting" description="Reveal hidden player potential over time." />
+                    <SettingToggle checked={rules.careerVarianceEnabled} onChange={(careerVarianceEnabled) => setRules((previous) => ({ ...previous, careerVarianceEnabled }))} label="Career realism variance" description="Add realistic form swings to performances." />
+                    <SettingToggle checked={rules.reputationBiasEnabled} onChange={(reputationBiasEnabled) => setRules((previous) => ({ ...previous, reputationBiasEnabled }))} label="Player reputation bias" description="Reputation nudges ratings and market value." />
+                    <SettingToggle checked={rules.simplifiedFormat} onChange={(simplifiedFormat) => setRules((previous) => ({ ...previous, simplifiedFormat }))} label="Simplified season format" description="Shorter, lighter season structure." />
+                  </div>
+                </SettingsGroup>
               </section>
             )}
 
@@ -1170,16 +1187,126 @@ function RuleBanner({ icon, title, text }: { icon: React.ReactNode; title: strin
   );
 }
 
+// Map a pack region display name to its competition label for section headings.
+const REGION_LEAGUE_LABEL: Record<string, string> = {
+  Korea: 'LCK',
+  China: 'LPL',
+  EMEA: 'LEC',
+  'North America': 'LTA North',
+  'South America': 'LTA South / CBLOL / LLA',
+  Pacific: 'LCP',
+};
+// Display order for the grouped team browser sections.
+const SECTION_ORDER = ['Korea', 'China', 'EMEA', 'North America', 'South America', 'Pacific', 'tier2', 'historic', 'other'];
+
+function sectionForTeam(team: PoolTeam): { key: string; title: string } {
+  if (!team.active) return { key: 'historic', title: 'Historic / Legacy / Disbanded' };
+  if (team.tier === 'tier2') return { key: 'tier2', title: 'Tier 2 / Academy' };
+  const league = REGION_LEAGUE_LABEL[team.region];
+  if (league) return { key: team.region, title: `${team.region} · ${league}` };
+  return { key: 'other', title: team.region || 'Other regions' };
+}
+
+function groupPackTeams(teams: PoolTeam[]): Array<{ key: string; title: string; teams: PoolTeam[] }> {
+  const groups = new Map<string, { title: string; teams: PoolTeam[] }>();
+  for (const team of teams) {
+    const section = sectionForTeam(team);
+    if (!groups.has(section.key)) groups.set(section.key, { title: section.title, teams: [] });
+    groups.get(section.key)!.teams.push(team);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => {
+      const ia = SECTION_ORDER.indexOf(a[0]);
+      const ib = SECTION_ORDER.indexOf(b[0]);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    })
+    .map(([key, value]) => ({ key, title: value.title, teams: value.teams }));
+}
+
+// Grouped, collapsible browser for the whole pack — sections by league/region/
+// tier with a heading, selected count, and team count. Search is applied by the
+// caller, so an empty result shows a friendly message.
+function PackTeamBrowser({
+  teams,
+  selectedIds,
+  onToggle,
+}: {
+  teams: PoolTeam[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const sections = useMemo(() => groupPackTeams(teams), [teams]);
+
+  if (sections.length === 0) {
+    return <p className="rounded-lg border border-border bg-bg-soft/40 p-4 text-center text-sm text-slate-500">No teams match your search.</p>;
+  }
+
+  const toggleSection = (key: string) =>
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  return (
+    <div className="space-y-4">
+      {sections.map((section) => {
+        const isCollapsed = collapsed.has(section.key);
+        const selectedInSection = section.teams.filter((team) => selectedIds.includes(team.id)).length;
+        return (
+          <div key={section.key}>
+            <button
+              type="button"
+              onClick={() => toggleSection(section.key)}
+              aria-expanded={!isCollapsed}
+              className="mb-2 flex w-full items-center justify-between gap-2 rounded-md border border-border bg-bg-card/60 px-3 py-2 text-left transition-colors hover:border-border-soft"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <ChevronDown size={14} className={cn('shrink-0 text-slate-500 transition-transform', isCollapsed && '-rotate-90')} />
+                <span className="truncate text-sm font-semibold text-slate-200">{section.title}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
+                {selectedInSection > 0 && (
+                  <span className="rounded-full bg-rift-cyan/15 px-2 py-0.5 font-semibold text-rift-cyan">{selectedInSection} selected</span>
+                )}
+                <span>{section.teams.length} {section.teams.length === 1 ? 'team' : 'teams'}</span>
+              </span>
+            </button>
+            {!isCollapsed && (
+              <div className="grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {section.teams.map((team) => (
+                  <button
+                    key={team.id}
+                    type="button"
+                    onClick={() => onToggle(team.id)}
+                    aria-pressed={selectedIds.includes(team.id)}
+                    className="rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-rift-cyan/60"
+                  >
+                    <TeamPoolRow team={team} selected={selectedIds.includes(team.id)} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TeamPoolRow({ team, selected }: { team: PoolTeam; selected: boolean }) {
   return (
-    <div className={cn('rounded-lg border bg-bg-soft/40 p-3 transition-colors', selected ? 'border-rift-cyan bg-rift-cyan/10' : 'border-border hover:border-border-soft')}>
-      <div className="flex items-center gap-2">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-card text-xs font-bold text-rift-cyan">{team.shortName.slice(0, 3)}</div>
+    <div className={cn('h-full rounded-lg border bg-bg-soft/40 p-3 transition-colors', selected ? 'border-rift-cyan bg-rift-cyan/10' : 'border-border hover:border-border-soft')}>
+      <div className="flex items-center gap-2.5">
+        {/* Logo first — real artwork when available, placeholder/initials otherwise. */}
+        <TeamLogo name={team.name} shortName={team.shortName} src={team.logo} color={team.color} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-slate-100">{team.name}</div>
-          <div className="truncate text-xs text-slate-500">{team.region} - {team.shortName}</div>
+          <div className="truncate text-xs text-slate-500">{team.region} · {team.shortName}</div>
         </div>
-        {selected && <Check size={15} className="text-rift-cyan" />}
+        {selected && <Check size={15} className="shrink-0 text-rift-cyan" />}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <TierBadge tier={team.tier} />
@@ -1205,6 +1332,17 @@ function ReviewBlock({ title, children }: { title: string; children: React.React
     <div className="rounded-lg border border-border bg-bg-soft/40 p-4">
       <div className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">{title}</div>
       <div className="space-y-2 text-sm">{children}</div>
+    </div>
+  );
+}
+
+// Settings-panel section: a titled card grouping related rule fields/toggles so
+// the configuration step reads like a professional settings screen.
+function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-bg-soft/30 p-4">
+      <div className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">{title}</div>
+      <div className="space-y-3">{children}</div>
     </div>
   );
 }
