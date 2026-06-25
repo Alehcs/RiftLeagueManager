@@ -1,60 +1,68 @@
 # Missing LoL team logos — checklist
 
-All bundled team badges under `public/assets/teams/lol/` are currently **IP-safe
-placeholders** (brand colour + initials), not official logos. This table tracks
-which teams still need real, licensed artwork dropped in.
+**33 of 35** manifest teams now use **real** logos imported from the Liquipedia
+MediaWiki API (see [`docs/logo-attribution.md`](logo-attribution.md) for
+provenance). The remaining **2** keep IP-safe placeholder badges because their
+Liquipedia match is low-confidence / identity-changed (review required). Real
+files live under `public/assets/teams/lol/real/`; placeholder `*.svg` files are
+kept in `public/assets/teams/lol/` as the fallback.
 
 The logo paths are driven by `src/data/lolLogoManifest.ts` (single source of
-truth). To replace a placeholder with a real logo:
+truth). To (re)import a real logo, use the importer (see below) or do it manually:
 
-1. Add the file to `public/assets/teams/lol/` (svg preferred; png/webp also fine).
+1. Add the file to `public/assets/teams/lol/real/` (png/svg/webp).
 2. Point the matching manifest entry's `path` at it and flip `status` to `real`.
 3. Reload the app — `<TeamLogo>` picks it up automatically (no other code change).
 
-**Status legend:** `real` = licensed artwork in place · `placeholder` = bundled
+**Status legend:** `real` = imported artwork in place · `placeholder` = bundled
 brand tile · `missing` = no asset/path · `broken` = path set but file absent.
 
-| Team | Short | Current asset | Status | Expected filename | Notes |
-| --- | --- | --- | --- | --- | --- |
-| T1 | T1 | `t1.svg` | placeholder | `t1.svg` | aliases: SK Telecom T1, SKT T1 |
-| Gen.G | GEN | `geng.svg` | placeholder | `geng.svg` | aliases: Samsung Galaxy, KSV |
-| Hanwha Life Esports | HLE | `hle.svg` | placeholder | `hle.svg` | |
-| Dplus KIA | DK | `dk.svg` | placeholder | `dk.svg` | aliases: DAMWON Gaming, DWG KIA |
-| KT Rolster | KT | `kt.svg` | placeholder | `kt.svg` | |
-| G2 Esports | G2 | `g2.svg` | placeholder | `g2.svg` | alias: Gamers2 |
-| Fnatic | FNC | `fnc.svg` | placeholder | `fnc.svg` | |
-| Karmine Corp | KC | `kc.svg` | placeholder | `kc.svg` | |
-| Team Heretics | TH | `th.svg` | placeholder | `th.svg` | |
-| Movistar KOI | KOI | `koi.svg` | placeholder | `koi.svg` | aliases: Rogue, KOI |
-| Bilibili Gaming | BLG | `blg.svg` | placeholder | `blg.svg` | |
-| JD Gaming | JDG | `jdg.svg` | placeholder | `jdg.svg` | |
-| Top Esports | TES | `tes.svg` | placeholder | `tes.svg` | |
-| Weibo Gaming | WBG | `wbg.svg` | placeholder | `wbg.svg` | |
-| Invictus Gaming | IG | `ig.svg` | placeholder | `ig.svg` | |
-| Cloud9 | C9 | `c9.svg` | placeholder | `c9.svg` | |
-| Team Liquid | TL | `tl.svg` | placeholder | `tl.svg` | |
-| FlyQuest | FLY | `fly.svg` | placeholder | `fly.svg` | |
-| 100 Thieves | 100 | `100t.svg` | placeholder | `100t.svg` | historic in pack |
-| LOUD | LLL | `loud.svg` | placeholder | `loud.svg` | |
-| paiN Gaming | PNG | `pain.svg` | placeholder | `pain.svg` | |
-| FURIA | FUR | `furia.svg` | placeholder | `furia.svg` | |
-| Los Ratones | LR | `losratones.svg` | placeholder | `losratones.svg` | legacy |
-| SK Telecom T1 (legacy) | SKT | `skt.svg` | placeholder | `skt.svg` | legacy dynasty |
-| Samsung Galaxy (legacy) | SSG | `ssg.svg` | placeholder | `ssg.svg` | legacy |
-| FunPlus Phoenix (legacy) | FPX | `fpx.svg` | placeholder | `fpx.svg` | legacy |
-| Taipei Assassins (legacy) | TPA | `tpa.svg` | placeholder | `tpa.svg` | legacy |
-| Team BDS | BDS | `bds.svg` | placeholder | `bds.svg` | added — EMEA |
-| Rare Atom | RA | `rareatom.svg` | placeholder | `rareatom.svg` | added — LPL; alias Rogue Warriors |
-| PSG Talon | PSG | `psg.svg` | placeholder | `psg.svg` | added — PCS; alias Talon Esports |
-| Isurus | ISG | `isurus.svg` | placeholder | `isurus.svg` | added — LLA |
-| Movistar R7 | R7 | `r7.svg` | placeholder | `r7.svg` | added — LLA; alias Rainbow7 |
-| Flamengo Esports | FLA | `flamengo.svg` | placeholder | `flamengo.svg` | added — CBLOL |
-| Astralis | AST | `astralis.svg` | placeholder | `astralis.svg` | added — EMEA legacy |
-| Saigon Buffalo | SGB | `saigonbuffalo.svg` | placeholder | `saigonbuffalo.svg` | added — VCS legacy |
+> ⚠️ Real logos are official **trademarked** artwork imported for private
+> prototype use, marked **review required** in the attribution file. No ownership
+> is claimed; they are not cleared for public redistribution.
 
-> No real (licensed) logo files exist in the repo yet — **every team above uses a
-> placeholder badge**. Drop real artwork in and flip the manifest `status` to
-> `real` to update this list.
+| Team | Short | Current asset | Status | Placeholder fallback | Notes |
+| --- | --- | --- | --- | --- | --- |
+| T1 | T1 | `real/t1.png` | real | `t1.svg` | aliases: SK Telecom T1, SKT T1 |
+| Gen.G | GEN | `real/geng.png` | real | `geng.svg` | aliases: Samsung Galaxy, KSV |
+| Hanwha Life Esports | HLE | `real/hle.png` | real | `hle.svg` | |
+| Dplus KIA | DK | `real/dk.png` | real | `dk.svg` | aliases: DAMWON Gaming, DWG KIA |
+| KT Rolster | KT | `real/kt.png` | real | `kt.svg` | |
+| G2 Esports | G2 | `real/g2.png` | real | `g2.svg` | alias: Gamers2 |
+| Fnatic | FNC | `real/fnc.png` | real | `fnc.svg` | |
+| Karmine Corp | KC | `real/kc.png` | real | `kc.svg` | |
+| Team Heretics | TH | `real/th.png` | real | `th.svg` | |
+| Movistar KOI | KOI | `real/koi.png` | real | `koi.svg` | aliases: Rogue, KOI |
+| Bilibili Gaming | BLG | `real/blg.png` | real | `blg.svg` | LPL |
+| JD Gaming | JDG | `real/jdg.png` | real | `jdg.svg` | LPL |
+| Top Esports | TES | `real/tes.png` | real | `tes.svg` | LPL |
+| Weibo Gaming | WBG | `real/wbg.png` | real | `wbg.svg` | LPL |
+| Invictus Gaming | IG | `real/ig.png` | real | `ig.svg` | LPL |
+| Cloud9 | C9 | `real/c9.png` | real | `c9.svg` | |
+| Team Liquid | TL | `real/tl.png` | real | `tl.svg` | |
+| FlyQuest | FLY | `real/fly.png` | real | `fly.svg` | |
+| 100 Thieves | 100 | `real/100t.png` | real | `100t.svg` | historic in pack |
+| LOUD | LLL | `real/loud.png` | real | `loud.svg` | CBLOL |
+| paiN Gaming | PNG | `real/pain.png` | real | `pain.svg` | CBLOL |
+| FURIA | FUR | `real/furia.png` | real | `furia.svg` | CBLOL |
+| Los Ratones | LR | `real/losratones.png` | real | `losratones.svg` | legacy |
+| SK Telecom T1 (legacy) | SKT | `real/skt.png` | real | `skt.svg` | legacy dynasty (T1 lineage) |
+| Samsung Galaxy (legacy) | SSG | `real/ssg.png` | real | `ssg.svg` | legacy |
+| FunPlus Phoenix (legacy) | FPX | `real/fpx.png` | real | `fpx.svg` | legacy |
+| Taipei Assassins (legacy) | TPA | `real/tpa.png` | real | `tpa.svg` | legacy |
+| Rare Atom | RA | `real/rareatom.png` | real | `rareatom.svg` | LPL; alias Rogue Warriors |
+| PSG Talon | PSG | `real/psg.png` | real | `psg.svg` | PCS; alias Talon Esports |
+| Isurus | ISG | `real/isurus.png` | real | `isurus.svg` | LLA |
+| Flamengo Esports | FLA | `real/flamengo.png` | real | `flamengo.svg` | CBLOL |
+| Astralis | AST | `real/astralis.png` | real | `astralis.svg` | EMEA legacy |
+| Saigon Buffalo | SGB | `real/saigonbuffalo.png` | real | `saigonbuffalo.svg` | VCS legacy |
+| Movistar R7 | R7 | `r7.svg` | placeholder | `r7.svg` | **review required** — API match resolves to LYON (org rebrand); not wired |
+| Team BDS | BDS | `bds.svg` | placeholder | `bds.svg` | **review required** — API match resolves to Shifters (rebrand); not wired |
+
+> The 2 placeholder teams above are intentionally **not** wired: their best
+> Liquipedia match points at a different/rebranded organisation. Re-run the
+> importer with `--team r7 --force` / `--team bds --force` only if you confirm the
+> resolved logo is correct for your prototype.
 
 ## Teams with no logo path (generated brand/initials fallback)
 

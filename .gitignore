@@ -42,16 +42,16 @@ pnpm-debug.log*
 *.tmp
 
 # ===========================================================================
-# Private imported team logos (Liquipedia importer output)
+# Imported team logos (Liquipedia importer output)
 # ---------------------------------------------------------------------------
 # Real team logos fetched by scripts/import-liquipedia-logos.ts are official,
-# trademarked artwork imported for PRIVATE prototype use only. They are kept
-# local/untracked by default and are NOT committed. The repo ships only the
-# IP-safe placeholder badges under public/assets/teams/lol/. To intentionally
-# commit a real logo you own the rights to, force-add it:
-#   git add -f public/assets/teams/lol/real/<file>
+# trademarked artwork. For this PRIVATE prototype they are committed
+# intentionally so the deployed app shows real logos instead of placeholders;
+# provenance/license is tracked in docs/logo-attribution.md (marked "review
+# required" — no ownership is claimed, not cleared for public redistribution).
+# The folder below is therefore NOT ignored. Only the importer's API response
+# cache is ignored (see .cache/ above), never the image files themselves.
 # ===========================================================================
-/public/assets/teams/lol/real/
 
 # ===========================================================================
 # Deploy / tooling caches
