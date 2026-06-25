@@ -10,11 +10,16 @@ function SmartImg({
   fallback,
   alt,
   className,
+  fit = 'cover',
 }: {
   src: string | null | undefined;
   fallback: string;
   alt: string;
   className?: string;
+  // Logos use 'contain' (real marks are often wide wordmarks that must not be
+  // cropped); photo avatars use 'cover'. Square placeholder tiles look the same
+  // either way, so this is safe for the bundled placeholders.
+  fit?: 'cover' | 'contain';
 }) {
   const [failed, setFailed] = React.useState(false);
   const url = !src || failed ? fallback : src;
@@ -24,7 +29,7 @@ function SmartImg({
       src={url}
       alt={alt}
       onError={() => setFailed(true)}
-      className={cn('object-cover', className)}
+      className={cn(fit === 'contain' ? 'object-contain' : 'object-cover', className)}
       loading="lazy"
     />
   );
@@ -52,6 +57,7 @@ export function TeamLogo({
   return (
     <SmartImg
       src={src}
+      fit="contain"
       fallback={fallbackLogoDataUri(name, shortName, color)}
       alt={`${name} logo`}
       className={cn('shrink-0 bg-bg-soft', shape === 'circle' ? 'rounded-full' : 'rounded-lg', SIZES[size], className)}

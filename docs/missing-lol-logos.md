@@ -65,3 +65,58 @@ one of them — nothing breaks without it.
 
 > ⚠️ Official team logos are typically trademarked/copyrighted. Only add artwork
 > you have the right to use. This repo intentionally ships placeholders only.
+
+## Optional: the private Liquipedia logo importer
+
+`scripts/import-liquipedia-logos.ts` can fetch real team logos for the teams in
+this checklist via the **Liquipedia MediaWiki API** (`api.php`) — it reads each
+team's infobox logo file, resolves the real file URL + metadata, downloads it to
+`public/assets/teams/lol/real/`, and (optionally) flips the matching manifest
+entry to `status: 'real'`. It **never** scrapes rendered HTML and **never** uses
+image search engines. Requires Node ≥ 22 (native TypeScript) — no extra deps.
+
+```bash
+# Safe preview — resolves logos, downloads nothing, writes no files (the default)
+npm run import-logos -- --dry-run
+
+# Import a single team (downloads + wires the manifest locally)
+npm run import-logos -- --team t1 --yes --write-manifest
+
+# Import everything confidently matched and wire the manifest
+npm run import-logos -- --yes --write-manifest
+
+# Re-import / overwrite an existing real logo
+npm run import-logos -- --team g2 --yes --force --write-manifest
+```
+
+Flags: `--dry-run`, `--yes`/`--apply`, `--team <id|short|name|alias>`,
+`--limit <n>`, `--force`, `--skip-existing` (default on), `--no-download`,
+`--write-manifest`, `--include-catalog`, `--delay <ms>`, `--verbose`. Run
+`npm run import-logos -- --help` for details.
+
+**Safe by default:** with no `--yes` it always runs a dry run (no downloads, no
+writes). It respects Liquipedia's API terms — a descriptive User-Agent, gzip,
+a conservative request delay, on-disk response caching (`.cache/liquipedia-logo-import/`),
+and retries with backoff. Low-confidence / identity-changed matches (e.g. a team
+that rebranded into a different org) are reported but **not** wired.
+
+### Verify visual rendering
+
+1. Run the importer for a few teams with `--write-manifest`, then `npm run dev`.
+2. Create a league from the **Private LoL Esports pack** (New Game wizard) so the
+   pack reads the updated manifest, and open a team profile / standings / career
+   hub. The badge should be the real artwork, and in dev tools the `<img>` `src`
+   should be `/assets/teams/lol/real/<id>.png` — not a `data:` URI (a `data:`
+   URI means the file is missing and the generated fallback kicked in).
+
+### Provenance, copyright & what is safe to commit
+
+- Every imported logo's source page, file page, original URL, license/status and
+  attribution are recorded in [`docs/logo-attribution.md`](logo-attribution.md).
+- Official logos are **trademarked**; imported files are marked **review required**
+  and are **not** cleared for public redistribution. This repo claims no ownership.
+- **Placeholders are the safe, committed default.** Real logos are optional
+  **private** assets: `public/assets/teams/lol/real/` is git-ignored, so the
+  downloaded images and any `status: 'real'` manifest edits stay local unless you
+  explicitly choose to commit artwork you have the right to use
+  (`git add -f public/assets/teams/lol/real/<file>`).

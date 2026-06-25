@@ -39,10 +39,37 @@ losratones  skt  ssg  fpx  tpa (historic / legacy)
 
 ## How to replace a placeholder with a real logo
 
+### Manually
+
 1. Add the file here, e.g. `t1.svg` (or `t1.png` / `t1.webp`).
 2. In `src/data/lolLogoManifest.ts`, point that team's `path` at the file and
    set `format` + `status: 'real'`.
 3. Reload the app. No other code changes are needed.
+
+### With the importer (optional, private)
+
+`scripts/import-liquipedia-logos.ts` automates the above using the **Liquipedia
+MediaWiki API** (no HTML scraping, no image search). It downloads real logos to
+the `real/` subfolder and wires the manifest for you:
+
+```bash
+npm run import-logos -- --dry-run                       # safe preview (default)
+npm run import-logos -- --team t1 --yes --write-manifest # one team
+npm run import-logos -- --yes --write-manifest           # all matched teams
+```
+
+See [`docs/missing-lol-logos.md`](../../../../docs/missing-lol-logos.md) for the
+full flag list and [`docs/logo-attribution.md`](../../../../docs/logo-attribution.md)
+for the provenance/license record of each imported file.
+
+### Safe to commit vs. private-only
+
+- **Safe to commit (and shipped):** the `*.svg` placeholder badges in this folder.
+  They are the fallback default — keep them.
+- **Private by default:** real logos downloaded to `real/`. That subfolder is
+  **git-ignored** because official logos are trademarked. The downloaded files and
+  any `status: 'real'` manifest edits stay local. To intentionally commit a logo
+  you have the rights to: `git add -f public/assets/teams/lol/real/<file>`.
 
 ## How to verify the app loads the real logo
 

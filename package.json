@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "import-logos": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/import-liquipedia-logos.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
