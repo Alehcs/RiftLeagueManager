@@ -243,14 +243,22 @@ function formatForMode(mode: CompetitionMode): LeagueFormat {
   return 'double_round_robin_bo1';
 }
 
-function defaultCompetition(pack: DataPack, style: ExperienceStyle, mode: CompetitionMode): DataPackCompetition | undefined {
+function defaultCompetition(pack: DataPack, style: ExperienceStyle, mode: CompetitionMode, region?: string): DataPackCompetition | undefined {
   if (style === 'historic') {
     return pack.competitions.find((competition) => /historic|all-time|throwback|legends|disbanded/i.test(competition.name))
       ?? pack.competitions[0];
   }
-  if (mode === 'full_circuit') {
+  // Quick Tournament and Full Circuit start from a cross-region "global" pool —
+  // no region lock; teams from any league can be mixed.
+  if (mode === 'full_circuit' || mode === 'quick_tournament') {
     return pack.competitions.find((competition) => /global|tier 1/i.test(competition.name))
       ?? pack.competitions[0];
+  }
+  // Regional Season follows the base region chosen on the Mode step (this is the
+  // simple replacement for the old per-pack competition dropdown).
+  if (region) {
+    const match = pack.competitions.find((competition) => competition.tier === 'tier1' && competition.region_id && regionName(pack, competition.region_id) === region);
+    if (match) return match;
   }
   return pack.competitions[0];
 }
@@ -463,7 +471,7 @@ export default function NewLeaguePage() {
       : undefined;
   const selectedCompetition = selectedPack
     ? selectedPack.competitions.find((competition) => competition.id === selectedCompetitionId)
-      ?? defaultCompetition(selectedPack, experienceStyle, competitionMode)
+      ?? defaultCompetition(selectedPack, experienceStyle, competitionMode, region)
     : undefined;
   const defaultTeamIds = useMemo(
     () => selectedPack
@@ -480,11 +488,13 @@ export default function NewLeaguePage() {
   const selectedPackPreview = packPreview(selectedPack);
   const runRegion = rules.fantasyPlacementEnabled
     ? rules.fantasyRegion.trim() || 'Custom'
-    : selectedPack && selectedCompetition?.region_id && competitionMode !== 'full_circuit'
-      ? regionName(selectedPack, selectedCompetition.region_id)
-      : competitionMode === 'full_circuit'
-        ? 'Global'
-        : region;
+    : competitionMode === 'quick_tournament' && selectedPack
+      ? 'Global' // quick tournaments mix teams from any region — no region lock
+      : selectedPack && selectedCompetition?.region_id && competitionMode !== 'full_circuit'
+        ? regionName(selectedPack, selectedCompetition.region_id)
+        : competitionMode === 'full_circuit'
+          ? 'Global'
+          : region;
 
   const packTeams = useMemo(() => selectedPack ? poolFromPack(selectedPack) : [], [selectedPack]);
   const generatedTeams = useMemo(
@@ -831,11 +841,17 @@ export default function NewLeaguePage() {
                       <PreviewStat label="Current" value={selectedPackPreview.current} />
                       <PreviewStat label="Historic" value={selectedPackPreview.historic} />
                     </div>
-                    <Field label="Competition seed">
-                      <Select value={selectedCompetition?.id ?? ''} onChange={(event) => { setSelectedCompetitionId(event.target.value); const comp = selectedPack.competitions.find((item) => item.id === event.target.value); setSelectedTeamIds(comp?.team_ids ?? []); setOwnerTeamKey(''); }}>
-                        {selectedPack.competitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name} - {TIER_META[competition.tier].label} - {competition.team_ids.length} teams</option>)}
-                      </Select>
-                    </Field>
+                    {/* The Private LoL pack shows every team grouped on the next step, so
+                        it needs no competition-seed dropdown. Other packs keep it. */}
+                    {dataChoice === 'private' ? (
+                      <p className="text-xs leading-relaxed text-slate-400">All private-pack teams are shown on the next step, grouped by league / region. {competitionMode === 'regional_season' ? 'Regional Season seeds the recommended pool from the base region above.' : 'Pick any teams from any region.'}</p>
+                    ) : (
+                      <Field label="Competition seed">
+                        <Select value={selectedCompetition?.id ?? ''} onChange={(event) => { setSelectedCompetitionId(event.target.value); const comp = selectedPack.competitions.find((item) => item.id === event.target.value); setSelectedTeamIds(comp?.team_ids ?? []); setOwnerTeamKey(''); }}>
+                          {selectedPack.competitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name} - {TIER_META[competition.tier].label} - {competition.team_ids.length} teams</option>)}
+                        </Select>
+                      </Field>
+                    )}
                   </div>
                 ) : (
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">This pack source is not available in this install.</div>
@@ -894,9 +910,11 @@ export default function NewLeaguePage() {
             {currentStep.id === 'teams' && (
               <section className="space-y-4">
                 <StepHeading icon={<Users2 size={18} />} title="Choose Teams / Team Pool" detail="Build the playable team pool for this run." />
-                {competitionMode === 'quick_tournament' && <RuleBanner icon={<Timer size={15} />} title="Quick Tournament" text="Any selected team can enter. Random fill, custom teams, and historic teams are available when enabled." />}
-                {competitionMode === 'regional_season' && <RuleBanner icon={<MapIcon size={15} />} title="Regional Season" text="The default pool follows the selected region or competition. Off-region teams make the run custom or fantasy." />}
-                {competitionMode === 'full_circuit' && <RuleBanner icon={<Globe2 size={15} />} title="Full Competitive Circuit" text="Realistic mode keeps teams in home regions. Fantasy placement can move selected teams into a custom region." />}
+                {competitionMode === 'quick_tournament' && <RuleBanner icon={<Timer size={15} />} title="Quick Tournament" text="Pick any teams from any region — mix leagues freely (e.g. T1 vs G2 vs Cloud9 vs BLG). Custom and historic teams are available when enabled." />}
+                {competitionMode === 'regional_season' && <RuleBanner icon={<MapIcon size={15} />} title="Regional Season" text="Usually region-based — the recommended pool follows the base region. Off-region teams make the run custom or fantasy." />}
+                {competitionMode === 'full_circuit' && <RuleBanner icon={<Globe2 size={15} />} title="Full Competitive Circuit" text="Teams compete in their home regions unless fantasy placement is enabled." />}
+                {dataChoice === 'private' && <p className="text-xs text-slate-500">All private-pack teams are shown below, grouped by league / region.</p>}
+                {rules.fantasyPlacementEnabled && competitionMode !== 'quick_tournament' && <RuleBanner icon={<Wand2 size={15} />} title="Fantasy placement active" text={`Selected teams will be placed into "${rules.fantasyRegion.trim() || 'Custom'}" instead of their home region.`} />}
 
                 {dataChoice === 'generated' ? (
                   <div className="space-y-3">
