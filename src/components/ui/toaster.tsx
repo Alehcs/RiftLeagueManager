@@ -4,7 +4,6 @@ import * as React from 'react';
 import { Swords, ArrowLeftRight, Users, Download, Info, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { useStore } from '@/lib/store/store';
 import type { Toast } from '@/lib/store/store';
-import { cn } from '@/lib/utils';
 
 const ICONS: Record<Toast['kind'], React.ReactNode> = {
   match: <Swords size={16} />,
@@ -51,10 +50,16 @@ function ToastRow({ toast }: { toast: Toast }) {
 export function Toaster() {
   const toasts = useStore((s) => s.toasts);
   return (
-    <div className={cn('pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2')}>
-      {toasts.map((t) => (
-        <ToastRow key={t.id} toast={t} />
-      ))}
+    // Full-width, viewport-anchored container (inset-x-0 avoids the `100vw`
+    // scrollbar overflow); padding sits inside and a right-aligned, max-360px
+    // column keeps the toasts bottom-right exactly as before — but it can never
+    // push past the viewport, so it adds no horizontal page scroll on mobile.
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex justify-end px-4">
+      <div className="flex w-full max-w-[360px] flex-col gap-2">
+        {toasts.map((t) => (
+          <ToastRow key={t.id} toast={t} />
+        ))}
+      </div>
     </div>
   );
 }
